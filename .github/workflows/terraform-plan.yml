@@ -1,0 +1,409 @@
+name: Terraform Plan
+
+# ==============================================================================
+# Produces a Terraform plan per environment for core-infra, and uploads a
+# deployment-metadata.json alongside it recording exactly which
+# infrastructure commit and assets release produced that plan.
+# terraform-apply.yml later re-checks-out both, exactly, before applying —
+# see that file's header for why this matters here specifically.
+#
+# TWO TRIGGERS, ONE UNIFIED JOB:
+#
+#   - pull_request (automatic): fires when a PR touches this environment's
+#     Terraform files. Which environment(s) to plan is decided by
+#     dorny/paths-filter. Uses the DEFAULT assets ref (vars.ASSETS_REF, or
+#     "main" if unset) — appropriate for routine infra changes where you
+#     are not deliberately testing a specific assets release.
+#
+#   - workflow_dispatch (manual): lets you plan a SPECIFIC environment
+#     against a SPECIFIC assets_ref on demand. This exists because assets
+#     releases are versioned independently of this repository — a new
+#     tagged assets release with no corresponding .tf change would never
+#     trigger the pull_request path at all, so this is how you pick it up.
+#
+# Both paths feed into the same "detect-changes" -> "plan" matrix, via
+# scripts/ci/resolve-target-environments.sh, so there is exactly one plan
+# job definition regardless of how the run was triggered.
+#
+# ARTIFACT NAMING: "tfplan-<environment>-<github.run_id>". Using the run ID
+# (always unique, always available) rather than a PR number means the same
+# naming scheme works unconditionally for both triggers — terraform-
+# apply.yml never needs to know which trigger produced a given plan run,
+# only its run ID.
+#
+# GITHUB ENVIRONMENTS: each matrix job sets "environment: <name>", so
+# vars.*/secrets.* resolve from that environment's own scoped values, and
+# any protection rules configured there apply automatically.
+#
+# This workflow NEVER applies anything — it is read-only against AWS.
+# ==============================================================================
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "infrastructure/development/**"
+      - "infrastructure/staging/**"
+      - "infrastructure/production/**"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to plan"
+        required: true
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+      assets_ref:
+        description: "Tagged release of the assets repository (blank = default)"
+        required: false
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+
+  # ============================================================================
+  # DETECT / RESOLVE TARGET ENVIRONMENT(S)
+  # ============================================================================
+
+  detect-changes:
+    name: Detect Target Environments
+    runs-on: ubuntu-latest
+    outputs:
+      environments: ${{ steps.resolve.outputs.environments }}
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Make CI Scripts Executable
+        run: chmod +x scripts/ci/*.sh
+
+      - name: Filter Changed Paths
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            development: 'infrastructure/development/**'
+            staging: 'infrastructure/staging/**'
+            production: 'infrastructure/production/**'
+
+      - name: Resolve Target Environments
+        id: resolve
+        run: |
+          ENVIRONMENTS="$(
+            scripts/ci/resolve-target-environments.sh \
+              "${{ github.event_name }}" \
+              "${{ github.event.inputs.environment }}" \
+              '${{ steps.filter.outputs.changes }}'
+          )"
+          echo "environments=${ENVIRONMENTS}" >> "${GITHUB_OUTPUT}"
+          echo "Resolved environments: ${ENVIRONMENTS}"
+
+  # ============================================================================
+  # PLAN (ONE JOB PER TARGET ENVIRONMENT)
+  # ============================================================================
+
+  plan:
+    name: Plan (${{ matrix.environment }})
+    needs: detect-changes
+    # Guards against both "nothing matched" ('[]') and an upstream failure
+    # ('' — empty string), matching dorny/paths-filter's own documented
+    # recommendation for this exact check.
+    if: needs.detect-changes.outputs.environments != '[]' && needs.detect-changes.outputs.environments != ''
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: ${{ fromJson(needs.detect-changes.outputs.environments) }}
+    # The -plan companion of the environment: the core role trusts it as well as
+    # <environment>, so a plan can be guarded separately (in staging and
+    # production it requires a reviewer) from the apply that changes the live
+    # environment. Its TF_AWS_ROLE_ARN secret and AWS_REGION variable must exist
+    # on THIS GitHub Environment too; scripts/init-project.sh creates both.
+    environment: ${{ matrix.environment }}-plan
+    env:
+      # Who runs Terraform tells it which repository to trust. Never committed:
+      # this repository is a blueprint many projects clone.
+      TF_VAR_github_repository: ${{ github.repository }}
+      TF_VAR_github_owner_id: ${{ github.repository_owner_id }}
+      TF_VAR_github_repository_id: ${{ github.repository_id }}
+      TF_VAR_oidc_subject_format: ${{ vars.OIDC_SUBJECT_FORMAT || 'immutable' }}
+    concurrency:
+      group: terraform-plan-${{ matrix.environment }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+    steps:
+
+      # ========================================================================
+      # RESOLVE THE COMMIT TO PLAN AND RECORD AGAINST
+      #
+      # On "pull_request" events, github.sha/GITHUB_SHA does NOT point to
+      # the PR's actual head commit — it points to an ephemeral, synthetic
+      # merge commit GitHub generates internally (refs/pull/N/merge). That
+      # commit is regenerated on every push to the PR and is typically
+      # unfetchable once the PR closes or updates again. Recording IT as
+      # "the commit this plan was made from" would mean terraform-
+      # apply.yml's later attempt to re-check-out that exact commit fails
+      # outright ("fatal: bad object"), defeating the entire point of
+      # pinning. The real, durable commit to use is
+      # github.event.pull_request.head.sha — the actual tip of the PR
+      # branch, which persists as part of main's history after merge
+      # (including through a squash merge, where the tree content matches
+      # even though the final SHA on main differs).
+      #
+      # For "workflow_dispatch" runs, github.sha already refers to the
+      # actual commit of whatever ref was selected — no such ambiguity.
+      # ========================================================================
+
+      - name: Resolve Infrastructure Commit
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "INFRASTRUCTURE_SHA=${{ github.event.pull_request.head.sha }}" >> "${GITHUB_ENV}"
+          else
+            echo "INFRASTRUCTURE_SHA=${{ github.sha }}" >> "${GITHUB_ENV}"
+          fi
+
+      # Checked out at the resolved commit explicitly, rather than
+      # whatever the default ref would be — for a pull_request event that
+      # default is the same ephemeral merge commit discussed above, so
+      # relying on it here would mean the PLAN itself is generated against
+      # different tree content than what gets recorded and later re-
+      # checked-out for apply.
+      - name: Checkout Infrastructure
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.INFRASTRUCTURE_SHA }}
+          fetch-depth: 0
+
+      # ========================================================================
+      # RESOLVE ASSETS REF
+      #
+      # Manual runs may specify an exact tag. Everything else (including
+      # every automatic pull_request run) falls back to vars.ASSETS_REF —
+      # a repo/environment variable you control — or "main" if that is
+      # unset too. GitHub Actions' "||" short-circuits on the first
+      # non-empty value, so this reads correctly for either trigger
+      # without an explicit event-type branch.
+      # ========================================================================
+
+      - name: Read Terraform Version
+        run: echo "TF_VERSION=$(tr -d '[:space:]' < .terraform-version)" >> "${GITHUB_ENV}"
+
+      # Refuses to plan while a value still holds the CHANGE_ME placeholder.
+      - name: Check Placeholders
+        run: bash scripts/ci/check-placeholders.sh infrastructure/${{ matrix.environment }}
+
+      # ----------------------------------------------------------------------
+      # ASSETS
+      #
+      # By default the assets are this repository's own assets/ folder. Set the
+      # ASSETS_REPOSITORY variable to use an external repository instead (with
+      # ASSETS_REPO_TOKEN as its access token and, optionally, ASSETS_REF).
+      # Values reach the shell through env, never interpolated into the script,
+      # and the ref is validated because it is written to GITHUB_ENV.
+      # ----------------------------------------------------------------------
+      - name: Resolve Assets Source
+        env:
+          ASSETS_REPOSITORY_VAR: ${{ vars.ASSETS_REPOSITORY }}
+          ASSETS_REF_INPUT: ${{ github.event.inputs.assets_ref }}
+          ASSETS_REF_VAR: ${{ vars.ASSETS_REF }}
+        run: |
+          if [[ -n "${ASSETS_REPOSITORY_VAR}" ]]; then
+            REF="${ASSETS_REF_INPUT:-${ASSETS_REF_VAR:-main}}"
+
+            if ! [[ "${REF}" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+              echo "ERROR: assets ref '${REF}' contains characters that are not allowed." >&2
+              exit 1
+            fi
+
+            {
+              echo "ASSETS_REPOSITORY=${ASSETS_REPOSITORY_VAR}"
+              echo "ASSETS_REF=${REF}"
+              echo "ASSETS_PATH=external-assets"
+            } >> "${GITHUB_ENV}"
+          else
+            {
+              echo "ASSETS_REPOSITORY="
+              echo "ASSETS_REF="
+              echo "ASSETS_PATH=assets"
+            } >> "${GITHUB_ENV}"
+          fi
+
+      - name: Checkout External Assets
+        if: env.ASSETS_REPOSITORY != ''
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.ASSETS_REPOSITORY }}
+          ref: ${{ env.ASSETS_REF }}
+          token: ${{ secrets.ASSETS_REPO_TOKEN }}
+          path: ${{ env.ASSETS_PATH }}
+          fetch-depth: 1
+
+      - name: Remove Assets Git Metadata
+        if: env.ASSETS_REPOSITORY != ''
+        run: rm -rf "${ASSETS_PATH}/.git"
+
+      - name: Verify Assets
+        run: |
+          if [ -z "$(find "${ASSETS_PATH}" -type f -print -quit)" ]; then
+            echo "ERROR: No asset files were found in ${ASSETS_PATH}." >&2
+            exit 1
+          fi
+          echo "Assets selected from ${ASSETS_REPOSITORY:-this repository}${ASSETS_REF:+@${ASSETS_REF}} (${ASSETS_PATH}):"
+          find "${ASSETS_PATH}" -type f -print | sort
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.TF_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform -chdir=infrastructure/${{ matrix.environment }} init -input=false -lockfile=readonly
+
+      # From the repository root, so the modules under modules/ are checked too.
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        run: terraform -chdir=infrastructure/${{ matrix.environment }} validate
+
+      # ========================================================================
+      # PLAN
+      #
+      # assets_path is passed relative to the environment's own working
+      # directory, matching how -chdir resolves relative paths for
+      # fileset()/file() calls in the Terraform configuration.
+      # ========================================================================
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          set +e
+          terraform -chdir=infrastructure/${{ matrix.environment }} plan \
+            -input=false \
+            -var="assets_path=../../${ASSETS_PATH}" \
+            -out=tfplan \
+            -detailed-exitcode
+          echo "exitcode=$?" >> "${GITHUB_OUTPUT}"
+          set -e
+
+      - name: Render Plan As Text
+        if: steps.plan.outputs.exitcode == '2'
+        run: terraform -chdir=infrastructure/${{ matrix.environment }} show -no-color tfplan > infrastructure/${{ matrix.environment }}/tfplan.txt
+
+      # ========================================================================
+      # DEPLOYMENT METADATA
+      #
+      # Records exactly what produced this plan. terraform-apply.yml reads
+      # this back to check out the same infrastructure commit and assets
+      # release, rather than whatever happens to be current at apply time.
+      # ========================================================================
+
+      - name: Create Deployment Metadata
+        if: steps.plan.outputs.exitcode == '2'
+        run: |
+          bash scripts/ci/create-deployment-metadata.sh \
+            "infrastructure/${{ matrix.environment }}" \
+            "${{ matrix.environment }}" \
+            "${INFRASTRUCTURE_SHA}" \
+            "${ASSETS_PATH}" \
+            "${ASSETS_REPOSITORY}" \
+            "${ASSETS_REF}"
+
+      - name: Upload Plan Artifact
+        if: steps.plan.outputs.exitcode == '2'
+        uses: actions/upload-artifact@v7
+        with:
+          name: tfplan-${{ matrix.environment }}-${{ github.run_id }}
+          path: |
+            infrastructure/${{ matrix.environment }}/tfplan
+            infrastructure/${{ matrix.environment }}/deployment-metadata.json
+          if-no-files-found: error
+          retention-days: 7
+
+      # ========================================================================
+      # POST / UPDATE STICKY PR COMMENT (pull_request runs only)
+      # ========================================================================
+
+      - name: Comment Plan On Pull Request
+        if: github.event_name == 'pull_request' && always() && steps.plan.outcome != 'skipped'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            const environment = '${{ matrix.environment }}';
+            const marker = `<!-- terraform-plan-${environment} -->`;
+            // Embedded in every branch below, regardless of outcome, so
+            // terraform-apply.yml can find the run that produced this PR's
+            // plan(s) by reading this comment back — deliberately NOT
+            // relying on the GitHub Workflow Runs API's head_sha filter
+            // matching a PR's real head commit for pull_request-triggered
+            // runs, which could not be confirmed with confidence. Reading
+            // our own already-posted comment is a mechanism we control and
+            // have already verified end-to-end.
+            const runIdMarker = `<!-- run-id: ${context.runId} -->`;
+
+            let body;
+            const exitcode = '${{ steps.plan.outputs.exitcode }}';
+
+            if (exitcode === '0') {
+              body = `${marker}\n${runIdMarker}\n### Terraform Plan (${environment})\nNo changes. Infrastructure matches the configuration.`;
+            } else if (exitcode === '2') {
+              let planText = fs.readFileSync('infrastructure/${{ matrix.environment }}/tfplan.txt', 'utf8');
+              const MAX = 60000;
+              if (planText.length > MAX) {
+                planText = planText.slice(0, MAX) + '\n\n... (truncated, see the full plan in the workflow run logs)';
+              }
+              body = `${marker}\n${runIdMarker}\n### Terraform Plan (${environment})\n\`\`\`\n${planText}\n\`\`\`\n\nThis plan will be applied automatically, unmodified, once this PR is merged to \`main\`.`;
+            } else {
+              body = `${marker}\n${runIdMarker}\n### Terraform Plan (${environment})\n:x: \`terraform plan\` failed. See the [workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) for details.`;
+            }
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(c => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      - name: Summary (workflow_dispatch runs)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "Plan run ID for this run: **${{ github.run_id }}**" >> "${GITHUB_STEP_SUMMARY}"
+          echo "Use this run ID with terraform-apply.yml's manual trigger to apply it." >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Fail If Plan Errored
+        if: steps.plan.outputs.exitcode == '1'
+        run: exit 1

@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+"""Fake docker. Compose files in tests are JSON (valid YAML). Records calls, mimics
+`compose config --format json` (absolute bind paths, env_file existence check)."""
+import os, sys, json
+root=os.environ['FAKE_ROOT']
+args=sys.argv[1:]
+with open(os.path.join(root,'calls.log'),'a') as f: f.write('docker '+' '.join(args)+'\n')
+if args[:1]==['login']:
+    sys.stdin.read(); sys.exit(0)
+if args[:1]==['compose']:
+    def opt(n):
+        return args[args.index(n)+1] if n in args else None
+    pd=opt('--project-directory'); cf=opt('--file'); pn=opt('--project-name'); ef=opt('--env-file')
+    verbs=[a for a in args if a in ('config','up','stop','down','ps')]
+    verb=verbs[0] if verbs else None
+    state=os.path.join(root,'compose-state'); os.makedirs(state,exist_ok=True)
+    if verb=='config':
+        try: doc=json.load(open(cf))
+        except Exception as e: sys.stderr.write('yaml: '+str(e)+'\n'); sys.exit(1)
+        pd=pd or os.path.dirname(cf)
+        for name,s in (doc.get('services') or {}).items():
+            ef_list=s.get('env_file') or []
+            if isinstance(ef_list,str): ef_list=[ef_list]
+            for e in ef_list:
+                if not os.path.exists(os.path.join(pd,e)):
+                    sys.stderr.write('env file %s not found\n'%os.path.join(pd,e)); sys.exit(1)
+            vols=[]
+            for v in s.get('volumes') or []:
+                if isinstance(v,str):
+                    src,tgt=v.split(':')[:2]
+                    v={'type':'bind' if src.startswith(('.','/','$')) else 'volume','source':src,'target':tgt}
+                if v.get('type')=='bind':
+                    src=v['source']
+                    # mimic env interpolation of ${VAR} from env-file
+                    envs={}
+                    if ef and os.path.exists(ef):
+                        for l in open(ef):
+                            l=l.rstrip('\n')
+                            if '=' in l and not l.startswith('#'): k,_,val=l.partition('='); envs[k]=val
+                    for k,val in envs.items(): src=src.replace('${%s}'%k,val)
+                    if not src.startswith('/'): src=os.path.normpath(os.path.join(pd,src))
+                    v['source']=os.path.normpath(src)
+                vols.append(v)
+            if vols: s['volumes']=vols
+        json.dump(doc,sys.stdout); sys.exit(0)
+    if verb=='up':
+        if os.environ.get('FAKE_UP_FAIL')==pn: sys.stderr.write('unhealthy\n'); sys.exit(1)
+        os.makedirs(os.path.join(root,'up-env'),exist_ok=True)
+        if ef and os.path.exists(ef): open(os.path.join(root,'up-env',pn),'w').write(open(ef).read())
+        open(os.path.join(state,pn),'w').write('running'); sys.exit(0)
+    if verb=='stop':
+        p=os.path.join(state,pn)
+        if os.path.exists(p): open(p,'w').write('stopped')
+        sys.exit(0)
+    if verb=='down':
+        p=os.path.join(state,pn)
+        if os.path.exists(p): os.remove(p)
+        sys.exit(0)
+    if verb=='ps':
+        p=os.path.join(state,pn)
+        if '-q' in args and os.path.exists(p) and open(p).read()=='running': print('container-'+pn)
+        sys.exit(0)
+if args[:1]==['ps']:
+    # docker ps --filter label=com.docker.compose.project=<p> --format '{{.Names}}'
+    label=None
+    for i,a in enumerate(args):
+        if a=='--filter' and args[i+1].startswith('label=com.docker.compose.project='):
+            label=args[i+1].split('=',2)[2]
+    state=os.path.join(root,'compose-state')
+    if label and os.path.exists(os.path.join(state,label)) and open(os.path.join(state,label)).read().strip()=='running':
+        print('container-'+label)
+    sys.exit(0)
+if (args[:1]==['container'] and args[1:2]==['inspect']) or args[:1]==['inspect']:
+    name=args[-1] if args[-1] not in ('-f','--format') else args[-2]
+    fmt=None
+    if '-f' in args: fmt=args[args.index('-f')+1]
+    if '--format' in args: fmt=args[args.index('--format')+1]
+    state=os.path.join(root,'compose-state')
+    # containers are named container-<project>
+    project=name[len('container-'):] if name.startswith('container-') else name
+    p=os.path.join(state,project)
+    if not os.path.exists(p): sys.stderr.write('No such container: '+name+'\n'); sys.exit(1)
+    running = open(p).read().strip()=='running'
+    if fmt and 'State.Running' in fmt: print('true' if running else 'false')
+    elif fmt and 'State.Status' in fmt: print('running' if running else 'exited')
+    elif fmt: print('running' if running else 'exited')
+    else: print('[{}]')
+    sys.exit(0)
+if args[:1]==['exec']:
+    # Records the invocation and the piped script, so a test can assert WHO ran
+    # WHAT against WHICH container, without a database.
+    piped=sys.stdin.read() if not sys.stdin.isatty() else ''
+    out=os.path.join(root,'exec'); os.makedirs(out,exist_ok=True)
+    n=len(os.listdir(out))+1
+    json.dump({'args':args,'stdin':piped}, open(os.path.join(out,'%03d.json'%n),'w'))
+    if os.environ.get('FAKE_EXEC_FAIL'): sys.stderr.write('syntax error\n'); sys.exit(1)
+    sys.exit(0)
+sys.stderr.write('fake docker: unhandled '+' '.join(args)+'\n'); sys.exit(99)

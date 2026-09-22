@@ -1,0 +1,80 @@
+name: Script Tests
+
+# ==============================================================================
+# Lints and tests the shell scripts that run on the fleet and database hosts.
+#
+# The tests run the scripts against stubbed "aws" and "docker" commands, so they
+# need no AWS account and no Docker. They prove the scripts' own logic -- secret
+# resolution, the compose guard, registry validation, checksum verification --
+# not Docker's or AWS's behaviour.
+# ==============================================================================
+
+on:
+  pull_request:
+    paths:
+      - "modules/**/assets/**"
+      - "modules/platform/host-scripts/**"
+      - "modules/database/provisioning/**"
+      - "scripts/**"
+      - "infrastructure/**"
+      - ".github/workflows/script-tests.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "modules/**/assets/**"
+      - "modules/platform/host-scripts/**"
+      - "modules/database/provisioning/**"
+      - "scripts/**"
+      - "infrastructure/**"
+      - ".github/workflows/script-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+
+  test:
+    name: Lint And Test Scripts
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      # bootstrap.sh and the env templates are Terraform templates, not shell,
+      # so they are not linted here.
+      - name: Shellcheck
+        run: |
+          shellcheck -S warning \
+            modules/platform/host-scripts/assets/*.sh \
+            modules/compute/assets/update.sh \
+            modules/database/host/assets/update.sh \
+            modules/database/host/assets/provision.sh \
+            modules/database/host/assets/provision-service.sh \
+            scripts/*.sh \
+            scripts/ci/*.sh
+
+      - name: Offline Script Tests
+        run: bash modules/platform/host-scripts/tests/run-all.sh
+
+      - name: Provisioning Lambda Tests
+        run: bash modules/database/provisioning/lambda/tests/run.sh
+
+      - name: CI Script Tests
+        run: bash scripts/ci/tests/run-all.sh
+
+      # Every environment folder must commit its provider lock file, locking every
+      # provider it declares. Plan and apply then run init -lockfile=readonly,
+      # which also covers providers that only modules declare.
+      - name: Provider Lock Files
+        run: bash scripts/ci/check-lock-files.sh infrastructure/*/
+
+      # The first apply of an environment targets module.github_oidc alone. This
+      # fails if that module ever gains a dependency that would pull in the
+      # rest of the environment.
+      - name: Bootstrap Apply Stays Independent
+        run: |
+          pip install --quiet python-hcl2
+          python3 scripts/ci/check-bootstrap-closure.py \
+            infrastructure/development infrastructure/staging infrastructure/production

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# fake lsblk driven by $FAKE_LSBLK_SCENARIO
+case "$*" in
+  "-dpno NAME,MODEL")
+    case "$FAKE_LSBLK_SCENARIO" in
+      one_extra) printf '/dev/nvme0n1 Amazon Elastic Block Store\n/dev/nvme1n1 Amazon Elastic Block Store\n' ;;
+      two_extra) printf '/dev/nvme0n1 Amazon Elastic Block Store\n/dev/nvme1n1 Amazon Elastic Block Store\n/dev/nvme2n1 Amazon Elastic Block Store\n' ;;
+      none)      printf '/dev/nvme0n1 Amazon Elastic Block Store\n' ;;
+      instance_store) printf '/dev/nvme0n1 Amazon Elastic Block Store\n/dev/nvme1n1 Amazon EC2 NVMe Instance Storage\n' ;;
+    esac ;;
+  "-no MOUNTPOINT /dev/nvme0n1") printf '/boot/efi\n/\n' ;;
+  "-no MOUNTPOINT /dev/nvme1n1"|"-no MOUNTPOINT /dev/nvme2n1") printf '\n' ;;
+esac

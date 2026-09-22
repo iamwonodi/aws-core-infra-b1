@@ -1,0 +1,91 @@
+name: Terraform Module Tests
+
+# ==============================================================================
+# Runs the native "terraform test" suites of the modules that can be tested
+# without AWS: they contain no provider resources, only variables, locals and
+# preconditions.
+#
+#   github-identity   OIDC subject generation and its invariants
+#   service-roles     generated service policies and their invariants
+#   service-boundary  the IAM permissions boundary for roles services create
+#   platform-contract the document services read to learn about the environment
+#   database-engines-role  the platforms team's generated role
+#   network           CIDR invariants (validations.tf, tested in isolation)
+# ==============================================================================
+
+on:
+  pull_request:
+    paths:
+      - "modules/platform/identity/**"
+      - "modules/platform/service-roles/**"
+      - "modules/platform/service-boundary/**"
+      - "modules/platform/contract/**"
+      - "modules/platform/engines-role/**"
+      - "modules/network/variables.tf"
+      - "modules/network/validations.tf"
+      - "modules/network/tests/**"
+      - ".github/workflows/terraform-module-tests.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "modules/platform/identity/**"
+      - "modules/platform/service-roles/**"
+      - "modules/platform/service-boundary/**"
+      - "modules/platform/contract/**"
+      - "modules/platform/engines-role/**"
+      - "modules/network/variables.tf"
+      - "modules/network/validations.tf"
+      - "modules/network/tests/**"
+      - ".github/workflows/terraform-module-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+
+  test:
+    name: Terraform Module Tests
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+
+      - name: github-identity
+        working-directory: modules/platform/identity
+        run: |
+          terraform init -backend=false
+          terraform test
+
+      - name: service-roles
+        working-directory: modules/platform/service-roles
+        run: |
+          terraform init -backend=false
+          terraform test
+
+      - name: service-boundary
+        working-directory: modules/platform/service-boundary
+        run: |
+          terraform init -backend=false
+          terraform test
+
+      - name: platform-contract
+        working-directory: modules/platform/contract
+        run: |
+          terraform init -backend=false
+          terraform test
+
+      - name: database-engines-role
+        working-directory: modules/platform/engines-role
+        run: |
+          terraform init -backend=false
+          terraform test
+
+      - name: network invariants
+        run: bash modules/network/tests/run.sh

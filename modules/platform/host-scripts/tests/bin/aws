@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""Fake AWS CLI for offline tests. State lives under $FAKE_ROOT."""
+import os, sys, json, shutil, hashlib
+root=os.environ['FAKE_ROOT']; log=open(os.path.join(root,'calls.log'),'a')
+args=sys.argv[1:]; log.write('aws '+' '.join(args)+'\n'); log.close()
+def s3path(uri):
+    assert uri.startswith('s3://'), uri
+    return os.path.join(root,'s3',uri[5:])
+def opt(name, default=None):
+    return args[args.index(name)+1] if name in args else default
+if args[:2]==['s3','sync']:
+    src,dst=args[2],args[3]; delete='--delete' in args
+    excludes=[args[i+1] for i,a in enumerate(args) if a=='--exclude']
+    if src.startswith('s3://'): src=s3path(src)
+    if not os.path.isdir(src): sys.exit(0)
+    os.makedirs(dst,exist_ok=True)
+    def excluded(rel): 
+        return any(('.resolved' in e) and ('.resolved' in rel.split(os.sep)) for e in excludes)
+    if delete:
+        for entry in os.listdir(dst):
+            if entry not in os.listdir(src) and not excluded(entry):
+                p=os.path.join(dst,entry); shutil.rmtree(p) if os.path.isdir(p) else os.remove(p)
+    for r,d,f in os.walk(src):
+        rel=os.path.relpath(r,src)
+        for x in f:
+            t=os.path.join(dst,rel,x); os.makedirs(os.path.dirname(t),exist_ok=True); shutil.copy2(os.path.join(r,x),t)
+    sys.exit(0)
+if args[:2]==['s3','cp']:
+    src,dst=args[2],args[3]
+    if os.environ.get('FAKE_S3_FAIL'): sys.exit(1)
+    if src.startswith('s3://'):
+        p=s3path(src)
+        if not os.path.exists(p): sys.stderr.write('404\n'); sys.exit(1)
+        shutil.copy2(p,dst)
+    else: os.makedirs(os.path.dirname(s3path(dst)),exist_ok=True); shutil.copy2(src,s3path(dst))
+    sys.exit(0)
+if args[:2]==['s3api','get-object']:
+    # aws s3api get-object --bucket B --key K [--region R] OUTFILE
+    p=os.path.join(root,'s3',opt('--bucket'),opt('--key'))
+    if not os.path.exists(p): sys.stderr.write('NoSuchKey\n'); sys.exit(254)
+    shutil.copy2(p,args[-1]); print('{}'); sys.exit(0)
+if args[:2]==['s3api','head-object']:
+    p=os.path.join(root,'s3',opt('--bucket'),opt('--key')); sys.exit(0 if os.path.exists(p) else 254)
+if args[:2]==['ssm','get-parameter']:
+    p=os.path.join(root,'ssm',opt('--name').strip('/').replace('/','__'))
+    if not os.path.exists(p): sys.stderr.write('ParameterNotFound\n'); sys.exit(254)
+    print(open(p).read()); sys.exit(0)
+if args[:2]==['secretsmanager','get-secret-value']:
+    p=os.path.join(root,'secrets',opt('--secret-id').replace('/','_').replace(':','_'))
+    if not os.path.exists(p): sys.stderr.write('ResourceNotFound\n'); sys.exit(254)
+    print(open(p).read()); sys.exit(0)
+if args[:2]==['ecr','get-login-password']:
+    if os.environ.get('FAKE_ECR_FAIL'): sys.exit(255)
+    print('fake-ecr-token'); sys.exit(0)
+sys.stderr.write('fake aws: unhandled '+' '.join(args)+'\n'); sys.exit(99)

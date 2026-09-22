@@ -1,0 +1,17 @@
+{
+  "OWNER/SERVICE-INFRA": {
+    "service_name": "auth",
+    "kind": "infra",
+    "tier": "private",
+    "owner_id": "12345678",
+    "repository_id": "987654321",
+    "description": "Optional. Shown on the IAM role."
+  },
+  "OWNER/SERVICE-APP": {
+    "service_name": "auth",
+    "kind": "app",
+    "tier": "private",
+    "owner_id": "12345678",
+    "repository_id": "123456789"
+  }
+}

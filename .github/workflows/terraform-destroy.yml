@@ -1,0 +1,309 @@
+name: Terraform Destroy
+
+# ==============================================================================
+# Manually destroys ALL resources in a single environment's Terraform state,
+# or all three environments in sequence. This is the only destructive
+# workflow in this repository — everything here is designed around making
+# it hard to trigger by accident and easy to review before anything is
+# actually destroyed.
+#
+# TRIGGER: workflow_dispatch ONLY. This never runs on push or pull_request.
+#
+# SAFEGUARDS:
+#
+#   1. Typed confirmation. Selecting an environment from the dropdown is
+#      not enough — you must also type a matching confirmation string
+#      exactly (see the "confirm" input below). This exists specifically
+#      to prevent an accidental dropdown click from doing anything.
+#
+#   2. Plan, then apply, as two SEPARATE jobs (destroy-plan, then
+#      destroy-apply), not one. Both jobs set "environment: <name>", so if
+#      that GitHub Environment has required-reviewer protection configured
+#      (Settings > Environments > <name>), each job pauses for its own
+#      approval. Splitting them matters: it means whoever approves the
+#      actual destroy can first read exactly what destroy-plan is about to
+#      destroy (in its step summary and uploaded plan artifact), rather
+#      than approving blind before a plan even exists.
+#
+#   3. "all" runs strictly one environment at a time (max-parallel: 1), in
+#      order: development, staging, then production — never in parallel —
+#      and a failure planning ANY environment blocks applying ALL of them
+#      (this job intentionally does not use "if: always()" downstream, so
+#      GitHub's default fail-closed behavior applies).
+#
+#   4. The Terraform state bucket is never at risk from this workflow. It is
+#      created by scripts/bootstrap-environment.sh outside Terraform, so it
+#      is not in any environment's state and cannot be destroyed here. Only
+#      scripts/destroy-terraform-backend.sh can remove it, by hand, and only
+#      once the state is empty.
+#
+# SCOPE: destroys every resource in an environment's Terraform state. The
+# assets bucket goes with it; its contents are reproducible from the assets
+# source, and assets_force_destroy already makes staging and production refuse
+# to delete a bucket that still holds objects.
+# ==============================================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to destroy"
+        required: true
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+          - all
+      confirm:
+        description: >
+          Type the environment name exactly to confirm (e.g. "production"),
+          or "DESTROY-ALL-ENVIRONMENTS" if you selected "all". This cannot
+          be undone.
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+
+  # ============================================================================
+  # VALIDATE TYPED CONFIRMATION
+  # ============================================================================
+
+  validate:
+    name: Validate Confirmation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+      - name: Make CI Scripts Executable
+        run: chmod +x scripts/ci/*.sh
+      - name: Check Confirmation Text
+        run: |
+          scripts/ci/validate-destroy-confirmation.sh \
+            "${{ github.event.inputs.environment }}" \
+            "${{ github.event.inputs.confirm }}"
+
+  # ============================================================================
+  # BUILD THE ENVIRONMENT LIST
+  # ============================================================================
+
+  detect-environments:
+    name: Build Environment List
+    needs: validate
+    runs-on: ubuntu-latest
+    outputs:
+      environments: ${{ steps.compose.outputs.environments }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+      - name: Make CI Scripts Executable
+        run: chmod +x scripts/ci/*.sh
+      - name: Compose Environment List
+        id: compose
+        run: |
+          ENVIRONMENTS="$(scripts/ci/resolve-destroy-environments.sh "${{ github.event.inputs.environment }}")"
+          echo "environments=${ENVIRONMENTS}" >> "${GITHUB_OUTPUT}"
+          echo "Will destroy: ${ENVIRONMENTS}"
+
+  # ============================================================================
+  # DESTROY PLAN (ONE JOB PER ENVIRONMENT, RUN ONE AT A TIME)
+  # ============================================================================
+
+  destroy-plan:
+    name: Destroy Plan (${{ matrix.environment }})
+    needs: detect-environments
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        environment: ${{ fromJson(needs.detect-environments.outputs.environments) }}
+    # Planning is guarded by the -plan environment, applying by the plain one.
+    environment: ${{ matrix.environment }}-plan
+    env:
+      # Terraform needs these to evaluate the configuration, even to destroy it.
+      TF_VAR_github_repository: ${{ github.repository }}
+      TF_VAR_github_owner_id: ${{ github.repository_owner_id }}
+      TF_VAR_github_repository_id: ${{ github.repository_id }}
+      TF_VAR_oidc_subject_format: ${{ vars.OIDC_SUBJECT_FORMAT || 'immutable' }}
+    concurrency:
+      group: terraform-destroy-${{ matrix.environment }}
+      cancel-in-progress: false
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Read Terraform Version
+        run: echo "TF_VERSION=$(tr -d '[:space:]' < .terraform-version)" >> "${GITHUB_ENV}"
+
+      - name: Make CI Scripts Executable
+        run: chmod +x scripts/ci/*.sh
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.TF_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform -chdir=infrastructure/${{ matrix.environment }} init -input=false -lockfile=readonly
+
+      # ========================================================================
+      # CHECK WHETHER THERE IS ANYTHING TO DESTROY
+      #
+      # An empty state means nothing to plan. Planning a destroy against it
+      # would succeed with "no changes" and produce a pointless artifact.
+      # ========================================================================
+
+      - name: Check State For Resources
+        id: targets
+        run: |
+          COUNT="$(terraform -chdir=infrastructure/${{ matrix.environment }} state list | wc -l)"
+
+          if [[ "${COUNT}" -eq 0 ]]; then
+            echo "No resources in ${{ matrix.environment }}'s state -- nothing to destroy."
+            echo "has_changes=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "${COUNT} resource(s) in state will be planned for destruction."
+            echo "has_changes=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+      # The destroy plan does not read any asset files, but the configuration
+      # still requires assets_path to be set. A path that does not exist makes
+      # fileset() return an empty set.
+      - name: Terraform Destroy Plan
+        if: steps.targets.outputs.has_changes == 'true'
+        run: |
+          terraform -chdir=infrastructure/${{ matrix.environment }} plan -input=false -destroy -out=tfplan-destroy \
+            -var="assets_path=../../assets-unused"
+
+      - name: Render Destroy Plan As Text
+        if: steps.targets.outputs.has_changes == 'true'
+        run: terraform -chdir=infrastructure/${{ matrix.environment }} show -no-color tfplan-destroy > infrastructure/${{ matrix.environment }}/tfplan-destroy.txt
+
+      # ========================================================================
+      # SURFACE THE PLAN FOR REVIEW
+      #
+      # Written to the job's step summary (visible directly on the run
+      # page, no artifact download needed) AND uploaded as an artifact
+      # (the full, untruncated version, and what destroy-apply actually
+      # consumes). Whoever approves the destroy-apply job's environment
+      # gate should read this first.
+      # ========================================================================
+
+      - name: Write Plan To Step Summary
+        run: |
+          scripts/ci/render-destroy-plan-summary.sh \
+            "${{ matrix.environment }}" \
+            "${{ steps.targets.outputs.has_changes }}" \
+            "infrastructure/${{ matrix.environment }}/tfplan-destroy.txt" \
+            >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload Destroy Plan Artifact
+        if: steps.targets.outputs.has_changes == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: tfplan-destroy-${{ matrix.environment }}
+          path: infrastructure/${{ matrix.environment }}/tfplan-destroy
+          retention-days: 7
+          overwrite: true
+
+  # ============================================================================
+  # DESTROY APPLY (ONE JOB PER ENVIRONMENT, RUN ONE AT A TIME)
+  #
+  # Deliberately does NOT use "if: always()" — if destroy-plan failed for
+  # any environment in this run, destroy-apply does not run for ANY
+  # environment. See "SAFEGUARDS" #3 in the header comment.
+  # ============================================================================
+
+  destroy-apply:
+    name: Destroy Apply (${{ matrix.environment }})
+    needs: [detect-environments, destroy-plan]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        environment: ${{ fromJson(needs.detect-environments.outputs.environments) }}
+    environment: ${{ matrix.environment }}
+    concurrency:
+      group: terraform-destroy-${{ matrix.environment }}
+      cancel-in-progress: false
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Read Terraform Version
+        run: echo "TF_VERSION=$(tr -d '[:space:]' < .terraform-version)" >> "${GITHUB_ENV}"
+
+      # Same workflow run as destroy-plan, so this is a plain same-run
+      # artifact download — no cross-run lookup needed here (unlike
+      # terraform-apply.yml, which applies a plan from a DIFFERENT,
+      # earlier workflow run).
+      #
+      # continue-on-error is intentional: destroy-plan only uploads an
+      # artifact when it found resources to destroy. No artifact is the expected, non-error outcome
+      # when there was nothing to destroy — "Check Plan Presence" below
+      # distinguishes that from a genuine problem and skips the rest of
+      # this job cleanly rather than failing it.
+      - name: Download Destroy Plan Artifact
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: tfplan-destroy-${{ matrix.environment }}
+          path: infrastructure/${{ matrix.environment }}
+
+      - name: Check Plan Presence
+        id: check
+        run: |
+          if [[ -s infrastructure/${{ matrix.environment }}/tfplan-destroy ]]; then
+            echo "present=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "present=false" >> "${GITHUB_OUTPUT}"
+            echo "Nothing to destroy for ${{ matrix.environment }} — no plan artifact (see the destroy-plan job's summary)."
+          fi
+
+      - name: Configure AWS Credentials
+        if: steps.check.outputs.present == 'true'
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.TF_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Setup Terraform
+        if: steps.check.outputs.present == 'true'
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        if: steps.check.outputs.present == 'true'
+        run: terraform -chdir=infrastructure/${{ matrix.environment }} init -input=false -lockfile=readonly
+
+      - name: Terraform Destroy Apply
+        if: steps.check.outputs.present == 'true'
+        run: terraform -chdir=infrastructure/${{ matrix.environment }} apply -input=false -auto-approve tfplan-destroy
+
+      - name: Summary
+        run: |
+          if [[ "${{ steps.check.outputs.present }}" == "true" ]]; then
+            echo "Destroyed all resources in **${{ matrix.environment }}**. The state bucket is managed outside Terraform and was not touched." >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "Nothing to destroy in **${{ matrix.environment }}** -- its state holds no resources." >> "${GITHUB_STEP_SUMMARY}"
+          fi

@@ -1,0 +1,342 @@
+name: Terraform Apply
+
+# ==============================================================================
+# Applies a Terraform plan produced by terraform-plan.yml — the EXACT
+# artifact, never a fresh plan — at the EXACT infrastructure commit and
+# assets release recorded in that plan's deployment-metadata.json.
+#
+# WHY RE-CHECK-OUT AT A PINNED COMMIT/REF (not just "whatever is current"):
+# this workflow's own trigger events (push, workflow_dispatch) are each
+# naturally tied to a specific commit already — but the ASSETS repository
+# is a completely separate repo with its own independent release cadence,
+# and nothing about a push or a manual click to THIS repo tells you which
+# assets tag was in effect when the plan was made. Since the Terraform
+# configuration reads asset file content directly off disk (fileset() /
+# file() / filemd5()), applying against a DIFFERENT assets checkout than
+# the one the plan saw could silently upload different files than what was
+# actually reviewed. Pinning both, explicitly, from the plan's own
+# metadata, closes that gap.
+#
+# TWO WAYS TO TRIGGER:
+#
+#   - push to main (automatic): the normal path after a PR with Terraform
+#     changes merges. Resolves the merged PR, then reads the run ID back
+#     out of terraform-plan.yml's own sticky PR comment for that PR (see
+#     that file's "Comment Plan On Pull Request" step) — deliberately not
+#     relying on the GitHub Workflow Runs API's head_sha filter matching a
+#     PR's actual head commit for pull_request-triggered runs, which could
+#     not be confirmed with confidence to behave that way.
+#
+#   - workflow_dispatch (manual): give a specific "plan_run_id" directly —
+#     the run ID terraform-plan.yml's own step summary prints. Needed for
+#     plans that were themselves manually triggered (e.g. an assets-only
+#     release with no .tf changes, so no PR ever existed), or to
+#     deliberately re-apply a specific historical plan.
+#
+# Both paths converge on the same run ID, and everything downstream
+# (discovering which environment(s) that run covers, and applying each) is
+# identical regardless of which trigger got you there.
+# ==============================================================================
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "infrastructure/development/**"
+      - "infrastructure/staging/**"
+      - "infrastructure/production/**"
+  workflow_dispatch:
+    inputs:
+      plan_run_id:
+        description: "GitHub Actions run ID containing the approved Terraform plan"
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+  actions: read
+
+jobs:
+
+  # ============================================================================
+  # RESOLVE WHICH PLAN RUN TO APPLY
+  # ============================================================================
+
+  resolve-run:
+    name: Resolve Plan Run
+    runs-on: ubuntu-latest
+    outputs:
+      run_id: ${{ steps.resolve.outputs.run_id }}
+    steps:
+      - name: Resolve Run ID
+        id: resolve
+        uses: actions/github-script@v9
+        env:
+          MANUAL_RUN_ID: ${{ github.event.inputs.plan_run_id }}
+        with:
+          script: |
+            const manualRunId = process.env.MANUAL_RUN_ID;
+            if (manualRunId && !/^\d+$/.test(manualRunId)) {
+              core.setFailed(`plan_run_id must be a run ID (digits only), got: ${manualRunId}`);
+              return;
+            }
+            if (manualRunId) {
+              core.setOutput('run_id', manualRunId);
+              console.log(`Using manually supplied plan run ID: ${manualRunId}`);
+              return;
+            }
+
+            const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+            });
+
+            if (prs.length === 0) {
+              core.setFailed(
+                `No pull request found associated with commit ${context.sha}. ` +
+                `Re-run this workflow manually via workflow_dispatch with the correct plan_run_id.`
+              );
+              return;
+            }
+
+            const pr = prs.find(p => p.merged_at !== null) || prs[0];
+
+            // Reads the run ID back out of terraform-plan.yml's own sticky
+            // PR comment, rather than querying the Workflow Runs API by
+            // head_sha. All of a PR's environment-specific plan comments
+            // share the same run ID (they come from matrix jobs within one
+            // workflow run), so finding any one of them is enough.
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+            });
+
+            const planComment = comments.find(c =>
+              /<!-- terraform-plan-(development|staging|production) -->/.test(c.body)
+            );
+
+            if (!planComment) {
+              core.setFailed(
+                `No terraform-plan.yml comment found on PR #${pr.number}. ` +
+                `Was terraform-plan.yml ever run for this PR?`
+              );
+              return;
+            }
+
+            const match = planComment.body.match(/<!-- run-id: (\d+) -->/);
+
+            if (!match) {
+              core.setFailed(
+                `Found a plan comment on PR #${pr.number} but could not parse its run-id marker.`
+              );
+              return;
+            }
+
+            core.setOutput('run_id', match[1]);
+            console.log(`Resolved PR #${pr.number} -> terraform-plan.yml run ${match[1]} (via PR comment)`);
+
+  # ============================================================================
+  # DISCOVER WHICH ENVIRONMENT(S) THAT RUN COVERS
+  # ============================================================================
+
+  discover-environments:
+    name: Discover Planned Environments
+    needs: resolve-run
+    runs-on: ubuntu-latest
+    outputs:
+      environments: ${{ steps.discover.outputs.environments }}
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Make CI Scripts Executable
+        run: chmod +x scripts/ci/*.sh
+
+      - name: Download All Plan Artifacts For This Run
+        uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ needs.resolve-run.outputs.run_id }}
+          pattern: "tfplan-*-${{ needs.resolve-run.outputs.run_id }}"
+          path: /tmp/plan-artifacts
+
+      - name: Discover Environments
+        id: discover
+        run: |
+          ENVIRONMENTS="$(scripts/ci/discover-environments-from-artifacts.sh /tmp/plan-artifacts)"
+          echo "environments=${ENVIRONMENTS}" >> "${GITHUB_OUTPUT}"
+          echo "Plan run ${{ needs.resolve-run.outputs.run_id }} covers: ${ENVIRONMENTS}"
+
+  # ============================================================================
+  # APPLY (ONE JOB PER PLANNED ENVIRONMENT)
+  # ============================================================================
+
+  apply:
+    name: Apply (${{ matrix.environment }})
+    needs: [resolve-run, discover-environments]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write # only this job: publishes role-arns/<env>.json to the platform-outputs branch
+      actions: read # job-level permissions REPLACE the workflow-level block, and downloading an artifact from a different run needs this
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: ${{ fromJson(needs.discover-environments.outputs.environments) }}
+    environment: ${{ matrix.environment }}
+    concurrency:
+      group: terraform-apply-${{ matrix.environment }}
+      cancel-in-progress: false
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Make CI Scripts Executable
+        run: chmod +x scripts/ci/*.sh
+
+      # Downloaded outside $GITHUB_WORKSPACE (/tmp) so the pinned-commit
+      # checkout below (which runs "git clean") can never wipe it.
+      - name: Download This Environment's Plan
+        uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ needs.resolve-run.outputs.run_id }}
+          name: tfplan-${{ matrix.environment }}-${{ needs.resolve-run.outputs.run_id }}
+          path: /tmp/plan-bundle
+
+      - name: Read Deployment Metadata
+        run: scripts/ci/read-deployment-metadata.sh /tmp/plan-bundle/deployment-metadata.json >> "${GITHUB_ENV}"
+
+      - name: Verify Metadata Matches This Job
+        run: |
+          if [[ "${ENVIRONMENT}" != "${{ matrix.environment }}" ]]; then
+            echo "ERROR: Plan metadata says environment '${ENVIRONMENT}', but this job is applying '${{ matrix.environment }}'." >&2
+            exit 1
+          fi
+
+      # ========================================================================
+      # CHECK OUT THE EXACT INFRASTRUCTURE COMMIT AND ASSETS RELEASE
+      #
+      # Both pinned from the metadata just read, not "whatever is current".
+      # See this file's header for why that matters here.
+      # ========================================================================
+
+      - name: Checkout Infrastructure At Pinned Commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.INFRASTRUCTURE_SHA }}
+          fetch-depth: 1
+
+      - name: Read Terraform Version
+        run: echo "TF_VERSION=$(tr -d '[:space:]' < .terraform-version)" >> "${GITHUB_ENV}"
+
+      # Restores the exact assets the plan was made with. Empty ASSETS_REPOSITORY
+      # means they were this repository's own assets/ folder, already present in
+      # the checkout above.
+      - name: Checkout Assets At Pinned Release
+        if: env.ASSETS_REPOSITORY != ''
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.ASSETS_REPOSITORY }}
+          ref: ${{ env.ASSETS_REF }}
+          token: ${{ secrets.ASSETS_REPO_TOKEN }}
+          path: ${{ env.ASSETS_PATH }}
+          fetch-depth: 1
+
+      - name: Remove Assets Git Metadata
+        if: env.ASSETS_REPOSITORY != ''
+        run: rm -rf "${ASSETS_PATH}/.git"
+
+      - name: Verify Assets
+        run: |
+          if [ -z "$(find "${ASSETS_PATH}" -type f -print -quit)" ]; then
+            echo "ERROR: No asset files were found in ${ASSETS_PATH}." >&2
+            exit 1
+          fi
+          echo "Assets restored (${ASSETS_PATH}):"
+          find "${ASSETS_PATH}" -type f -print | sort
+
+      - name: Place Plan File
+        run: cp /tmp/plan-bundle/tfplan infrastructure/${{ matrix.environment }}/tfplan
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.TF_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform -chdir=infrastructure/${{ matrix.environment }} init -input=false -lockfile=readonly
+
+      - name: Terraform Validate
+        run: terraform -chdir=infrastructure/${{ matrix.environment }} validate
+
+      # No -var here: the saved plan already contains the assets_path
+      # value used when it was created. The assets files themselves still
+      # need to be physically present on disk (checked out above) because
+      # aws_s3_object reads their content directly.
+      - name: Terraform Apply
+        run: terraform -chdir=infrastructure/${{ matrix.environment }} apply -input=false tfplan
+
+      # ========================================================================
+      # PUBLISH ROLE ARNS
+      #
+      # role-arns/<environment>.json is the file every service repo's own
+      # bootstrap-service-repo.sh reads to discover its own ARN -- this is
+      # what keeps that file current after every apply, not just the
+      # local bootstrap. Named to match what it actually holds: BOTH the
+      # core role and every service role for this environment, not just
+      # services (an earlier name, service-role-arns/, was misleading).
+      #
+      # Written to /tmp first, deliberately outside the checkout, so the
+      # fresh checkout of main two steps down can never wipe it.
+      # ========================================================================
+
+      - name: Compute Role ARNs JSON
+        run: |
+          OUTPUTS_JSON="$(terraform -chdir=infrastructure/${{ matrix.environment }} output -json)"
+          CORE_ARN="$(jq -r '.core_deploy_role_arn.value // empty' <<< "${OUTPUTS_JSON}")"
+          SERVICE_ARNS_JSON="$(jq -c '.service_role_arns.value // {}' <<< "${OUTPUTS_JSON}")"
+
+          jq -n \
+            --arg env "${{ matrix.environment }}" \
+            --arg core "${CORE_ARN}" \
+            --argjson services "${SERVICE_ARNS_JSON}" \
+            '{
+              environment: $env,
+              core_deploy_role_arn: (if $core == "" then null else $core end),
+              service_role_arns: $services
+            }' > /tmp/role-arns-new.json
+
+          cat /tmp/role-arns-new.json
+
+      # A completely fresh checkout of main's current tip -- deliberately
+      # NOT reusing the pinned-commit checkout above. That checkout is
+      # pinned to whatever INFRASTRUCTURE_SHA the plan recorded, which can
+      # be behind main's actual tip by the time this step runs. Committing
+      # on top of a stale checkout risks silently reverting commits that
+      # landed on main after that SHA. Outputs were already captured into
+      # shell variables above, so re-checking out here loses nothing.
+      # Published to the platform-outputs branch, not main: main stays
+      # pull-request-only, and the branch holds nothing but these generated files.
+      - name: Publish Role ARNs
+        run: bash scripts/ci/publish-role-arns.sh "${{ matrix.environment }}" /tmp/role-arns-new.json
+
+      - name: Summary
+        run: |
+          echo "Applied plan run ${{ needs.resolve-run.outputs.run_id }} to **${{ matrix.environment }}**." >> "${GITHUB_STEP_SUMMARY}"
+          echo "Infrastructure commit: \`${INFRASTRUCTURE_SHA}\`" >> "${GITHUB_STEP_SUMMARY}"
+          echo "Assets: \`${ASSETS_REPOSITORY:-this repository}${ASSETS_REF:+@${ASSETS_REF}}\`" >> "${GITHUB_STEP_SUMMARY}"
