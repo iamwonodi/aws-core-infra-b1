@@ -88,7 +88,7 @@ The EC2 database host runs whatever the platforms team publishes. **Until an eng
 2. Send `<project>-database-update`.
 3. The engine's pipeline publishes its port at `/<project>/database/engines/postgres/port` and opens it on the isolated security group.
 
-Staging and production need none of this: core's apply creates one RDS instance for each engine listed in that environment's `database_engines` (`infrastructure/<env>/terraform.tfvars`). The list ships empty; set it with `scripts/init-project.sh --staging-engines ... --production-engines ...` before a service there needs a database.
+Staging and production need none of this: core's apply creates one RDS instance for each engine listed in that environment's `database_engines` (`infrastructure/<env>/terraform.tfvars`). To pay only for the hours staging is used, set `database_schedule = "working_hours"` in staging's `terraform.tfvars` and adjust `database_working_hours` (default weekends 08:00–19:00 Lagos time). While staging's databases are stopped, deploys there fail their health checks and provisioning fails; start an instance by hand with `aws rds start-db-instance --db-instance-identifier <project>-staging-<engine>` (it stops again at the day's stop time). The list ships empty; set it with `scripts/init-project.sh --staging-engines ... --production-engines ...` before a service there needs a database.
 
 ---
 

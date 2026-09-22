@@ -185,6 +185,28 @@ variable "database_engines" {
   }
 }
 
+variable "database_schedule" {
+  type        = string
+  default     = "always_on"
+  description = "When staging's database instances run. \"always_on\": continuously once created, as in production. \"working_hours\": started and stopped on database_working_hours, paying only for those hours (storage and backups are billed either way). While stopped, services cannot reach their databases."
+
+  validation {
+    condition     = contains(["always_on", "working_hours"], var.database_schedule)
+    error_message = "database_schedule must be \"always_on\" or \"working_hours\"."
+  }
+}
+
+variable "database_working_hours" {
+  type = object({
+    days     = optional(list(string), ["SAT", "SUN"])
+    start    = optional(string, "08:00")
+    stop     = optional(string, "19:00")
+    timezone = optional(string, "Africa/Lagos")
+  })
+  default     = {}
+  description = "The window database_schedule = \"working_hours\" runs the instances in: the days they start (MON ... SUN), the start and stop times (HH:MM, 24-hour) and the IANA time zone. They are stopped at the stop time every day, so one started by hand, or restarted by AWS after 7 days stopped, stops again that evening."
+}
+
 variable "database_instance_class" {
   type        = string
   default     = "db.t4g.micro"

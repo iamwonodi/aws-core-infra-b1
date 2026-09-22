@@ -377,6 +377,30 @@ module "database_provisioning" {
   tags = local.common_tags
 }
 
+# Staging only: production's instances always run. With "working_hours", the
+# instances start and stop on a schedule; see modules/database/schedule.
+module "database_schedule" {
+  source = "../../modules/database/schedule"
+  count  = var.database_schedule == "working_hours" && length(local.rds_engines) > 0 ? 1 : 0
+
+  project_name = var.project_name
+  environment  = local.environment
+
+  instances = {
+    for engine in local.rds_engines : engine => {
+      id  = module.database[engine].id
+      arn = module.database[engine].arn
+    }
+  }
+
+  days     = var.database_working_hours.days
+  start    = var.database_working_hours.start
+  stop     = var.database_working_hours.stop
+  timezone = var.database_working_hours.timezone
+
+  tags = local.common_tags
+}
+
 ################################################################################
 # PLATFORM CONTRACT
 #

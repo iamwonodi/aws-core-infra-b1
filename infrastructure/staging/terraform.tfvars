@@ -32,3 +32,17 @@ isolated_summary_cidr = "10.20.48.0/20"
 # "postgres", "mysql" ("mongodb" once its DocumentDB module exists). Empty runs
 # none, and costs nothing.
 database_engines = []
+
+# When those instances run: "always_on" (continuously, as in production) or
+# "working_hours" (only within the window below, to save the instance cost; while
+# stopped, services cannot reach their databases).
+database_schedule = "always_on"
+
+# Used only with "working_hours". Days they start, start and stop (HH:MM, 24-hour,
+# in the time zone). They are stopped at the stop time EVERY day.
+database_working_hours = {
+  days     = ["SAT", "SUN"]
+  start    = "08:00"
+  stop     = "19:00"
+  timezone = "Africa/Lagos"
+}

@@ -21,6 +21,7 @@ on:
       - "modules/platform/service-boundary/**"
       - "modules/platform/contract/**"
       - "modules/platform/engines-role/**"
+      - "modules/database/schedule/**"
       - "modules/network/variables.tf"
       - "modules/network/validations.tf"
       - "modules/network/tests/**"
@@ -34,6 +35,7 @@ on:
       - "modules/platform/service-boundary/**"
       - "modules/platform/contract/**"
       - "modules/platform/engines-role/**"
+      - "modules/database/schedule/**"
       - "modules/network/variables.tf"
       - "modules/network/validations.tf"
       - "modules/network/tests/**"
@@ -83,6 +85,12 @@ jobs:
 
       - name: database-engines-role
         working-directory: modules/platform/engines-role
+        run: |
+          terraform init -backend=false
+          terraform test
+
+      - name: database-schedule
+        working-directory: modules/database/schedule
         run: |
           terraform init -backend=false
           terraform test
