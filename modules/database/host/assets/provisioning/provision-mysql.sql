@@ -30,7 +30,11 @@ PREPARE statement FROM @statement; EXECUTE statement; DEALLOCATE PREPARE stateme
 SET @statement = CONCAT('ALTER USER ''', @target_user, '''@''%'' IDENTIFIED BY ''', @target_pass, '''');
 PREPARE statement FROM @statement; EXECUTE statement; DEALLOCATE PREPARE statement;
 
-SET @statement = CONCAT('GRANT ALL PRIVILEGES ON `', @target_db, '`.* TO ''', @target_user, '''@''%''');
+-- In a database-level GRANT, "_" and "%" in the database name are WILDCARDS.
+-- Service databases are named from the service name with "-" turned into "_",
+-- so an unescaped grant on `ab_c` would also cover `abxc`: another service's
+-- data. The underscores are escaped so the grant names exactly one database.
+SET @statement = CONCAT('GRANT ALL PRIVILEGES ON `', REPLACE(@target_db, '_', '\\_'), '`.* TO ''', @target_user, '''@''%''');
 PREPARE statement FROM @statement; EXECUTE statement; DEALLOCATE PREPARE statement;
 
 FLUSH PRIVILEGES;
