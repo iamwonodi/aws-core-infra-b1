@@ -12,7 +12,7 @@ This is a **blueprint**: many projects clone it. Never commit anything project-s
 
 ## Layout
 
-`modules/` holds the four infrastructure domains — `network`, `edge`, `compute` (`image/` for the golden AMI and `scripts/` for the deploy bucket, both used by every environment), `database` (`host/` for development, `provisioning/` for the managed instance) — and `platform/`, which holds what is not infrastructure: `identity`, `service-roles`, `service-boundary`, `engines-role`, `contract` and `scripts`. A module used by exactly one domain is nested inside it (`edge/cloudfront`, `network/nacl-security`).
+`modules/` holds the four infrastructure domains — `network`, `edge`, `compute` (`image/` for the golden AMI and `deploy-bucket/`, both used by every environment), `database` (`host/` for development, `provisioning/` for the managed instance) — and `platform/`, which holds what is not infrastructure: `identity`, `service-roles`, `service-boundary`, `engines-role`, `contract` and `host-scripts`. A module used by exactly one domain is nested inside it (`edge/cloudfront`, `network/nacl-security`).
 
 ## Architecture in one paragraph
 
@@ -35,7 +35,8 @@ terraform -chdir=infrastructure/<env> init -backend=false && terraform -chdir=in
 bash modules/platform/host-scripts/tests/run-all.sh
 bash scripts/ci/tests/run-all.sh
 bash modules/network/tests/run.sh
-(cd modules/<module> && terraform init -backend=false && terraform test)     # github-identity, service-roles, service-boundary, platform-contract, database-engines-role
+(cd modules/platform/<module> && terraform init -backend=false && terraform test)     # identity, service-roles, service-boundary, contract, engines-role
+bash modules/database/provisioning/lambda/tests/run.sh
 python3 scripts/ci/check-bootstrap-closure.py infrastructure/*
 ```
 
@@ -43,7 +44,7 @@ python3 scripts/ci/check-bootstrap-closure.py infrastructure/*
 
 - `terraform-aws-autoscaling` v3.0.0 must be tagged before core can init: the shared fleets pin it. It stops the group reverting target groups attached from a service's own repository.
 - The dedicated-hosting policy (staging and production) is a first draft that has never been exercised against AWS; the first real plan will show any missing action. It is 9.6 KB of a 10.2 KB limit, so the next statements added to it will need managed policies.
-- Per-service database provisioning exists for the EC2 database host only. The managed database staging and production are meant to use has no container to run it in, and no module for it exists yet.
+- Managed-database provisioning (`database/provisioning`, a VPC Lambda) is tested offline and against a local PostgreSQL; TLS and SCRAM against real RDS are unverified.
 - Nothing here has been applied to real AWS. The first apply will validate what offline tests cannot: provider arguments, IAM condition keys, and the Docker and AWS behaviour the script tests stub.
 - Every `infrastructure/<env>/.terraform.lock.hcl` is committed, locked for every platform (`terraform providers lock -platform=windows_amd64 -platform=linux_amd64 -platform=darwin_amd64 -platform=darwin_arm64`). CI fails without it, and every environment init is `-lockfile=readonly`: after adding a provider or a module that brings one, re-lock and commit before pushing.
 - Names: `<project>-<environment>-<service>-<resource>` for anything with a service, `<project>-<environment>-<resource>` otherwise; SSM documents and parameter paths omit the environment. The secret and the target group are the one exception (`<project>-<service>-<environment>-...`, from `secrets-vault` and `target-group` v1): keep them behind `service_first_prefix` in `service-roles` until both modules release a v2. `fleet` names only the shared fleet's own things; `shared` and `dedicated` are the hosting models. Always say **port registry** or **ECR registry**, never "the registry".

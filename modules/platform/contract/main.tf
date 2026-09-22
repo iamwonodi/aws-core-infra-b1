@@ -66,6 +66,10 @@ locals {
       # which has a container to run in. Exactly one of the two is set.
       provision_document = var.database_provision_document_name
       provision_function = var.database_provision_function_name
+
+      # How the platforms team's pipeline applies the engines it publishes to the
+      # EC2 host. Null on a managed database, which runs no published engines.
+      update_document = var.database_update_document_name
     }
 
     tiers = var.tiers

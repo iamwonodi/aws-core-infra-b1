@@ -53,6 +53,7 @@ run "a_repository_gets_a_scoped_role" {
         "document/core-database-update",
         "\"ssm:resourceTag/Service\":\"database-hub\"",
         "parameter/core/database/engines/*",
+        "parameter/core/platform/config\"",
         "security-group/sg-0iso111122223333a",
         "core-development-tfstate/platform/database-engines/*",
         "repository/engines/*",

@@ -49,7 +49,7 @@ resource "terraform_data" "contract_version" {
   "service_boundary_arn": null,
   "fleet_update_document": "acme-fleet-update",
   "isolated": { "security_group_id": "sg-..." },
-  "database": { "host": "db.dev.example.org", "provision_document": "acme-database-provision", "provision_function": null },
+  "database": { "host": "db.dev.example.org", "provision_document": "acme-database-provision", "provision_function": null, "update_document": "acme-database-update" },
   "tiers": {
     "private":  { "security_group_id": "sg-...", "alb_security_group_id": "sg-...", "asg_name": "...", "listener_arn": "arn:...", "subnet_ids": null },
     "internal": { "security_group_id": "sg-...", "alb_security_group_id": "sg-...", "asg_name": "...", "listener_arn": "arn:..." }
@@ -74,6 +74,7 @@ resource "terraform_data" "contract_version" {
 | `database.host` | connect to the database host |
 | `database.provision_document` | (the service's **infrastructure** repository) create the service's database and user on the EC2 host: publish a request to `provisioning/<service>/` in the deploy bucket, then send this document |
 | `database.provision_function` | the same job on a **managed** database: invoke this Lambda with `{"service_name": "<service>"}`. Exactly one of these two is set, never both |
+| `database.update_document` | (the platforms team's pipeline, development only) apply the engines it published under `database/` in the deploy bucket. Null on a managed database |
 
 In a `dedicated` environment `buckets.deploy`, `fleet_update_document`, `database` and the tiers' `security_group_id` and `asg_name` are `null`: each service has its own configuration bucket and update document, which its infra repository creates and describes in `/<project>/services/<service>/config`.
 

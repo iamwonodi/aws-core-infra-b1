@@ -96,6 +96,12 @@ variable "database_provision_function_name" {
   description = "Lambda a service's infrastructure repository invokes to create its database and user on a managed database. Null where provisioning is done on an EC2 database host instead (development)."
 }
 
+variable "database_update_document_name" {
+  type        = string
+  default     = null
+  description = "SSM document the platforms team's pipeline sends to apply the database engines it published. Null where there is no EC2 database host (a managed database runs no published engines)."
+}
+
 variable "isolated_security_group_id" {
   type        = string
   default     = null

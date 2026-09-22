@@ -309,6 +309,7 @@ module "platform_contract" {
   isolated_security_group_id       = module.network.isolated_security_group_id
   database_host                    = module.database.host
   database_provision_document_name = module.database.provision_document_name
+  database_update_document_name    = module.database.update_document_name
 
   tiers = {
     private = {

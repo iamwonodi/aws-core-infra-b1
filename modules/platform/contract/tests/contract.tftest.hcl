@@ -16,6 +16,7 @@ variables {
   isolated_security_group_id       = "sg-0iso"
   database_host                    = "db.dev.example.org"
   database_provision_document_name = "core-database-provision"
+  database_update_document_name    = "core-database-update"
 
   tiers = {
     private = {
@@ -67,6 +68,11 @@ run "the_contract_has_the_documented_shape" {
   assert {
     condition     = jsondecode(output.config_json).database.host == "db.dev.example.org" && jsondecode(output.config_json).database.provision_document == "core-database-provision"
     error_message = "the database host and its provisioning document must be published"
+  }
+
+  assert {
+    condition     = jsondecode(output.config_json).database.update_document == "core-database-update"
+    error_message = "the database update document must be published for the platforms team's pipeline"
   }
 }
 

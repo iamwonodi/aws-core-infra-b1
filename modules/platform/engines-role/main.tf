@@ -70,6 +70,16 @@ locals {
         }
       },
 
+      # --- Reading the platform contract ---------------------------------------
+      # The pipeline learns the bucket, the update document and the security
+      # groups from the contract, never from core's state.
+      {
+        Sid      = "ReadPlatformContract"
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter"]
+        Resource = "arn:aws:ssm:${local.arn_region_account}:parameter/${var.project_name}/platform/config"
+      },
+
       # --- Publishing each engine's port for services to read -----------------
       {
         Sid    = "EnginePortParameters"

@@ -6,6 +6,7 @@ It grants nothing until `repository` is set.
 
 | Purpose | Allowed | Scoped to |
 | --- | --- | --- |
+| Read the contract | `ssm:GetParameter` | `/<project>/platform/config` |
 | Publish engines | S3 put, get, delete, list | deploy bucket, `database/*` |
 | Apply them | `ssm:SendCommand` | the database-update document, on the instance tagged `Service=<database service>` |
 | Publish ports | SSM parameters | `/<project>/database/engines/*` |
