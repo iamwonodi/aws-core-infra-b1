@@ -1,6 +1,6 @@
 # Database Engines Role Module
 
-Generates the IAM role the **platforms team's** repository assumes. That team owns the database engines: they publish a compose file per engine and a registry to the deploy bucket, trigger the database host to apply them, open each engine's allocated port on the isolated security group, and publish the port for services to read.
+Generates the IAM role the **platforms team's** repository assumes. That team owns the database engines: they publish a compose file per engine and a registry to the deploy bucket, trigger the database host to apply them, open each engine's port on the isolated security group, and publish the port for services to read.
 
 It grants nothing until `repository` is set.
 

@@ -69,8 +69,8 @@ database/registry.json
 
 ```json
 {
-  "postgres": { "port": 20001, "active": true },
-  "mysql":    { "port": 20002, "active": false }
+  "postgres": { "port": 5432, "active": true },
+  "mysql":    { "port": 3306, "active": false }
 }
 ```
 
@@ -93,7 +93,7 @@ A database must never stop as a side effect of a file disappearing. This differs
 | --- | --- |
 | `${DATA_ROOT}` | Persistent data root on the data volume. Keep data in `${DATA_ROOT}/<engine>` |
 | `${ENGINE_NAME}` | The engine's folder name |
-| `${ENGINE_PORT}` | The port from the registry. Publish it: `"${ENGINE_PORT}:5432"` |
+| `${ENGINE_PORT}` | The port from the registry, which is the engine's native port. Publish it: `"${ENGINE_PORT}:5432"` |
 
 The compose file loads its environment with `env_file: .resolved/.env`, the secret-resolved scratch copy. In the engine's `.env`, secrets are referenced by pointer, and `CORE_ROOT_SECRET_ARN` (the ARN of the database administrator secret) is provided by the platform:
 
@@ -113,7 +113,7 @@ The database host sits in the isolated tier, which has no internet path, so it c
 
 ### Registry validation
 
-`update.sh` validates the registry before acting on it and leaves the previous one in place if it is bad: it must be a JSON object; each engine needs a lowercase name (letters, digits, hyphens), an integer `port` from 1024 to 65535, and an optional boolean `active`; no two **active** engines may share a port. The platforms repository's CI should enforce the same rules, plus the allocated port range and that every registered engine has a folder.
+`update.sh` validates the registry before acting on it and leaves the previous one in place if it is bad: it must be a JSON object; each engine needs a lowercase name (letters, digits, hyphens), an integer `port` from 1024 to 65535, and an optional boolean `active`; no two **active** engines may share a port. The platforms repository's CI enforces the same rules, plus that each engine is published on its own native port (host port = engine port) and that every registered engine has a folder.
 
 ### Ports and the security group
 

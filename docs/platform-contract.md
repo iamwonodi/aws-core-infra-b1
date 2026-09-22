@@ -81,7 +81,7 @@ In a `dedicated` environment `buckets.deploy`, `fleet_update_document`, `databas
 ## What is deliberately not in it
 
 - **A CloudFront secret header.** Core does not use one: the ALBs are internal and reachable only through the CloudFront VPC origin, so a shared header adds nothing. A service should not condition its ALB rule on one.
-- **A database port.** Ports are allocated per engine by the platforms team, who publish each as `/<project>/database/engines/<engine>/port`; read it with `ssm:GetParameter` on that path. The service role may read `/<project>/database/*`.
+- **A database port.** Each engine runs on its native port (5432, 3306, 27017); the platforms team publishes it as `/<project>/database/engines/<engine>/port`; read it with `ssm:GetParameter` on that path. The service role may read `/<project>/database/*`.
 - **Secrets of any kind.** Everything here is an identifier.
 
 ## Changing the contract

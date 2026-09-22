@@ -9,7 +9,7 @@ set -euo pipefail
 # engines and the port each one is reachable on. They are published to the
 # deploy bucket:
 #
-#   database/registry.json                      { "<engine>": { "port": 20001, "active": true }, ... }
+#   database/registry.json                      { "<engine>": { "port": 5432, "active": true }, ... }
 #   database/engines/<engine>/docker-compose.yaml
 #   database/engines/<engine>/.env
 #

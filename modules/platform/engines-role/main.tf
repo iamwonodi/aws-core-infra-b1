@@ -3,7 +3,7 @@
 #
 # The platforms team owns the database engines: they publish a compose file per
 # engine and a registry to the deploy bucket, then trigger the database host to
-# apply them. Their pipeline also opens each engine's allocated port on the
+# apply them. Their pipeline also opens each engine's port on the
 # isolated security group and publishes that port for services to read. This
 # module generates the role that pipeline assumes, scoped to exactly that.
 #
