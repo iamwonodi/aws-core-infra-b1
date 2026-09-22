@@ -53,7 +53,8 @@ For each: `fmt`, `init -upgrade`, `validate` on the root and `examples/complete`
 **Once per repository:**
 
 ```bash
-scripts/init-project.sh --project acme --region af-south-1 --domain example.org --reviewers alice
+scripts/init-project.sh --project acme --region af-south-1 --domain example.org --reviewers alice \
+  --staging-engines postgres --production-engines postgres
 ```
 
 **Per environment, with that environment's AWS credentials:**
@@ -87,7 +88,7 @@ The EC2 database host runs whatever the platforms team publishes. **Until an eng
 2. Send `<project>-database-update`.
 3. The engine's pipeline publishes its port at `/<project>/database/engines/postgres/port` and opens it on the isolated security group.
 
-Staging and production need none of this: core's apply creates one RDS instance for each engine listed in that environment's `database_engines` (`infrastructure/<env>/terraform.tfvars`). The list ships empty, so set it before a service there needs a database.
+Staging and production need none of this: core's apply creates one RDS instance for each engine listed in that environment's `database_engines` (`infrastructure/<env>/terraform.tfvars`). The list ships empty; set it with `scripts/init-project.sh --staging-engines ... --production-engines ...` before a service there needs a database.
 
 ---
 

@@ -72,7 +72,8 @@ docs/                     first-apply guide, platform contract, decision log
 ## Getting started
 
 ```bash
-scripts/init-project.sh --project acme --region eu-west-1 --domain example.org --reviewers alice,bob
+scripts/init-project.sh --project acme --region eu-west-1 --domain example.org --reviewers alice,bob \
+  --staging-engines postgres --production-engines postgres
 ```
 
 then follow [docs/first-apply.md](docs/first-apply.md). To bring up a service end to end across all four repositories, follow [docs/runbook.md](docs/runbook.md). It covers each environment's account, the one local apply, and the normal pull-request flow afterwards.

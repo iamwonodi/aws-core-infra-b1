@@ -12,7 +12,9 @@ set -euo pipefail
 # What it does, per environment (development, staging, production):
 #
 #   Files   infrastructure/<env>/terraform.tfvars   project_name, aws_region,
-#                                                   domain_name, private_domain
+#                                                   domain_name, private_domain,
+#                                                   database_engines (staging and
+#                                                   production, when given)
 #           infrastructure/<env>/backend.tf         state bucket and region
 #
 #   GitHub  Environment <env>        guards the job that changes the live
@@ -30,11 +32,20 @@ set -euo pipefail
 # Usage:
 #   scripts/init-project.sh --project NAME --region REGION --domain BASE \
 #       [--private-domain BASE] [--reviewers login1,login2] [--repo OWNER/REPO] \
+#       [--staging-engines LIST] [--production-engines LIST] \
 #       [--skip-github] [--dry-run]
 #
 #   --domain BASE   production serves BASE, staging serves staging.BASE and
 #                   development serves dev.BASE (e.g. example.org).
 #   --private-domain BASE   same shape, for the VPC-only zone. Defaults to --domain.
+#   --staging-engines LIST, --production-engines LIST
+#                   the database engines that environment runs, each on its own
+#                   instance: comma-separated from postgres and mysql, or "none".
+#                   Omitted, the environment's current list is left as it is.
+#                   Each engine is billed while it runs, so list only what a
+#                   service there uses. (mongodb is refused until its DocumentDB
+#                   module exists.) Development's engines come from the database
+#                   engines repository instead.
 #   --dry-run       show what would change; write and call nothing.
 #   --skip-github   only rewrite files.
 #
@@ -48,6 +59,7 @@ REPO_ROOT="${INIT_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 ENVIRONMENTS=(development staging production)
 
 PROJECT="" REGION="" DOMAIN="" PRIVATE_DOMAIN="" REVIEWERS="" REPO=""
+STAGING_ENGINES="" PRODUCTION_ENGINES=""
 SKIP_GITHUB=false
 DRY_RUN=false
 
@@ -61,6 +73,8 @@ while [[ $# -gt 0 ]]; do
     --private-domain) PRIVATE_DOMAIN="${2:-}"; shift 2 ;;
     --reviewers)      REVIEWERS="${2:-}"; shift 2 ;;
     --repo)           REPO="${2:-}"; shift 2 ;;
+    --staging-engines)    STAGING_ENGINES="${2:-}"; [[ -n "${STAGING_ENGINES}" ]] || STAGING_ENGINES="(empty)"; shift 2 ;;
+    --production-engines) PRODUCTION_ENGINES="${2:-}"; [[ -n "${PRODUCTION_ENGINES}" ]] || PRODUCTION_ENGINES="(empty)"; shift 2 ;;
     --skip-github)    SKIP_GITHUB=true; shift ;;
     --dry-run)        DRY_RUN=true; shift ;;
     -h|--help)        usage; exit 0 ;;
@@ -90,6 +104,28 @@ fi
 if [[ -n "${REVIEWERS}" && ! "${REVIEWERS}" =~ ^[A-Za-z0-9-]+(,[A-Za-z0-9-]+)*$ ]]; then
   errors+=("--reviewers must be comma-separated GitHub logins.")
 fi
+
+# An engine list: "none", or comma-separated engines this platform can run.
+check_engines() {
+  local flag="$1" list="$2" engine seen=","
+  [[ -z "${list}" || "${list}" == "none" ]] && return 0
+  if ! [[ "${list}" =~ ^[a-z]+(,[a-z]+)*$ ]]; then
+    errors+=("${flag} must be comma-separated engine names, or none.")
+    return 0
+  fi
+  IFS=',' read -ra engines <<< "${list}"
+  for engine in "${engines[@]}"; do
+    case "${engine}" in
+      postgres|mysql) ;;
+      mongodb) errors+=("${flag}: mongodb runs on Amazon DocumentDB, and its module does not exist yet.") ;;
+      *) errors+=("${flag}: '${engine}' is not an engine; use postgres and mysql.") ;;
+    esac
+    [[ "${seen}" == *",${engine},"* ]] && errors+=("${flag} lists ${engine} more than once.")
+    seen+="${engine},"
+  done
+}
+check_engines --staging-engines "${STAGING_ENGINES}"
+check_engines --production-engines "${PRODUCTION_ENGINES}"
 
 if [[ ${#errors[@]} -gt 0 ]]; then
   printf 'ERROR: %s\n' "${errors[@]}" >&2
@@ -141,14 +177,46 @@ set_value() {
   rm -f "${tmp}"
 }
 
+# "postgres,mysql" -> ["postgres", "mysql"]; "none" -> []
+engines_hcl() {
+  local list="$1"
+  [[ "${list}" == "none" ]] && { echo "[]"; return; }
+  echo "[\"${list//,/\", \"}\"]"
+}
+
+# Replaces the whole value on the line that sets the list, keeping any trailing
+# comment.
+set_list() {
+  local file="$1" key="$2" value="$3" tmp
+  tmp="$(mktemp)"
+
+  if ! grep -qE "^[[:space:]]*${key}[[:space:]]*=[[:space:]]*\[" "${file}"; then
+    rm -f "${tmp}"
+    echo "ERROR: ${file} has no '${key} = [...]' line to set." >&2
+    exit 1
+  fi
+
+  sed -E "s|^([[:space:]]*${key}[[:space:]]*=[[:space:]]*)\[[^]]*\]|\1${value}|" "${file}" > "${tmp}"
+  cat "${tmp}" > "${file}"
+  rm -f "${tmp}"
+}
+
+engines_for() {
+  case "$1" in
+    staging)    echo "${STAGING_ENGINES}" ;;
+    production) echo "${PRODUCTION_ENGINES}" ;;
+  esac
+}
+
 update_files() {
-  local env dir
+  local env dir engines
   for env in "${ENVIRONMENTS[@]}"; do
     dir="${REPO_ROOT}/infrastructure/${env}"
     [[ -f "${dir}/terraform.tfvars" && -f "${dir}/backend.tf" ]] \
       || { echo "ERROR: ${dir} is missing terraform.tfvars or backend.tf." >&2; exit 1; }
 
-    echo "  ${env}: project=${PROJECT} region=${REGION} domain=$(domain_for "${env}" "${DOMAIN}") state=${PROJECT}-${env}-tfstate"
+    engines="$(engines_for "${env}")"
+    echo "  ${env}: project=${PROJECT} region=${REGION} domain=$(domain_for "${env}" "${DOMAIN}") state=${PROJECT}-${env}-tfstate${engines:+ database_engines=${engines}}"
 
     [[ "${DRY_RUN}" == "true" ]] && continue
 
@@ -158,6 +226,10 @@ update_files() {
     set_value "${dir}/terraform.tfvars" private_domain "$(domain_for "${env}" "${PRIVATE_DOMAIN}")"
     set_value "${dir}/backend.tf" bucket "${PROJECT}-${env}-tfstate"
     set_value "${dir}/backend.tf" region "${REGION}"
+
+    if [[ -n "${engines}" ]]; then
+      set_list "${dir}/terraform.tfvars" database_engines "$(engines_hcl "${engines}")"
+    fi
   done
 }
 

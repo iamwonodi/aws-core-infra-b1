@@ -16,12 +16,15 @@ The repository must exist on GitHub with an `origin` remote. GitHub Environment 
 ## 1. Set the project's values
 
 ```bash
-scripts/init-project.sh --project acme --region eu-west-1 --domain example.org --reviewers alice,bob
+scripts/init-project.sh --project acme --region eu-west-1 --domain example.org --reviewers alice,bob \
+  --staging-engines postgres --production-engines postgres
 ```
 
 This writes `project_name`, `aws_region`, the domains and the state bucket into each environment's `terraform.tfvars` and `backend.tf`, and creates six GitHub Environments: `development`, `staging`, `production` and a `-plan` companion for each, with reviewers required on staging and production. Preview first with `--dry-run`. Commit the result.
 
 Domains: production serves the base domain, staging `staging.<base>`, development `dev.<base>`.
+
+Database engines: `--staging-engines` and `--production-engines` choose, per environment, which engines run, each on its own RDS instance: `postgres`, `mysql`, both (`postgres,mysql`) or `none`. Every engine is billed while it runs, so list only what a service there uses. Omitted, an environment's list is left as it is, so re-running the script never changes it by accident; to change it later, re-run with the flag or edit `database_engines` in that environment's `terraform.tfvars`. Development's engines come from the database engines repository instead.
 
 ## 2. Optional: local configuration
 

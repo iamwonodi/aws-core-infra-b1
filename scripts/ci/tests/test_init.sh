@@ -73,4 +73,25 @@ check "bad --repo"                                     bad --project acme --regi
 check "unknown option"                                 bad --project acme --region eu-west-1 --domain example.org --bogus
 fresh; FAKE_GH_NO_USER=1 bash "${INIT}" "${ARGS[@]}" >/dev/null 2>&1
 check "an unknown reviewer login fails"                test $? -ne 0
+echo "== database engines"
+fresh; run --staging-engines postgres --production-engines postgres,mysql >/dev/null 2>&1
+check "staging gets its own engine list"               grep -qx 'database_engines = \["postgres"\]' "${WORK}/repo/infrastructure/staging/terraform.tfvars"
+check "production gets its own engine list"            grep -qx 'database_engines = \["postgres", "mysql"\]' "${WORK}/repo/infrastructure/production/terraform.tfvars"
+check "development has no engine list"                 bash -c "! grep -q database_engines '${WORK}/repo/infrastructure/development/terraform.tfvars'"
+run >/dev/null 2>&1
+check "omitted, the lists are left as they are"        grep -qx 'database_engines = \["postgres", "mysql"\]' "${WORK}/repo/infrastructure/production/terraform.tfvars"
+run --production-engines none >/dev/null 2>&1
+check "none empties an environment's list"             grep -qx 'database_engines = \[\]' "${WORK}/repo/infrastructure/production/terraform.tfvars"
+check "and leaves the other environment alone"         grep -qx 'database_engines = \["postgres"\]' "${WORK}/repo/infrastructure/staging/terraform.tfvars"
+fresh; run --staging-engines mysql --dry-run > "${WORK}/dry.txt" 2>&1
+check "a dry run shows the list but writes nothing"    bash -c "grep -q 'database_engines=mysql' '${WORK}/dry.txt' && grep -qx 'database_engines = \[\]' '${WORK}/repo/infrastructure/staging/terraform.tfvars'"
+fresh; out="$(run --production-engines postgres,mongodb 2>&1)"; rc=$?
+check "mongodb is refused until its module exists"     bash -c "[ $rc -ne 0 ] && grep -q 'DocumentDB' <<< \"$out\""
+check "and nothing was written"                        grep -qx 'database_engines = \[\]' "${WORK}/repo/infrastructure/production/terraform.tfvars"
+check "an unknown engine is refused"                   bad --project acme --region eu-west-1 --domain example.org --staging-engines redis
+check "a repeated engine is refused"                   bad --project acme --region eu-west-1 --domain example.org --staging-engines mysql,mysql
+check "an empty list is refused (say none)"            bad --project acme --region eu-west-1 --domain example.org --staging-engines ""
+check "a malformed list is refused"                    bad --project acme --region eu-west-1 --domain example.org --staging-engines "postgres, mysql"
+fresh; run --staging-engines postgres,mysql --production-engines postgres,mysql >/dev/null 2>&1
+check "the written lists are valid Terraform"          bash -c "cd '${WORK}/repo/infrastructure/production' && grep '^database_engines' terraform.tfvars | grep -qE '^database_engines = \\[(\"(postgres|mysql)\"(, )?)+\\]$'"
 finish
