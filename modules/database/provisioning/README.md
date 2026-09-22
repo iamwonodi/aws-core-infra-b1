@@ -49,7 +49,9 @@ It runs on every apply of the service, so every step is conditional.
 
 **The driver is committed.** The Lambda runtimes carry no database driver, and a compiled one would have to match the runtime's architecture, so pure-Python `pg8000` is vendored in `lambda/vendor/` (see its README, including how to refresh it).
 
-**PostgreSQL only.** Another engine needs its driver adding and `provision.py` teaching to use it. The `engine` variable refuses anything else rather than failing at run time.
+**PostgreSQL and MySQL**, one function per engine (`engine`). On MySQL it creates the database (utf8mb4) and a user for `'%'`, sets the password every time, and grants everything on that database only. The grant escapes `_`, which MySQL otherwise treats as a wildcard in a database name: unescaped, service `ab-c`'s grant would also cover service `abxc`'s database. Another engine needs its driver adding and `provision.py` teaching to use it; the `engine` variable refuses anything else rather than failing at run time.
+
+Both connections are encrypted but do not verify the server's certificate: the RDS certificate authority is not in the Lambda runtime's trust store, and the traffic never leaves the isolated tier.
 
 **Logs need an endpoint.** The isolated subnets have no route to the internet, so the function reaches CloudWatch Logs only through the `logs` interface endpoint the network module creates. Without it the function runs and writes nothing, and a failure is invisible.
 
@@ -65,11 +67,11 @@ Placing a function in a VPC needs `ec2:CreateNetworkInterface` and its companion
 | --- | --- | --- |
 | `project_name`, `environment` | — | part of the function's name |
 | `name` | engine | distinguishes two functions in one environment |
-| `engine` | `postgres` | the only value accepted today |
+| `engine` | `postgres` | `postgres` or `mysql` |
 | `database_host`, `database_port` | — | what to connect to |
 | `database_security_group_id` | — | an ingress rule is added to it for the function |
 | `admin_secret_arn` | — | the administrator credential |
-| `admin_database` | `postgres` | connected to before a service's database exists |
+| `admin_database` | `postgres` | connected to before a service's database exists (core uses `platform` on MySQL) |
 | `service_secret_pattern` | `<project>-{service}-<environment>-secret-vault` | how a service's secret is named |
 | `vpc_id`, `subnet_ids` | — | the same isolated subnets as the database |
 | `log_retention_days` | `30` | |

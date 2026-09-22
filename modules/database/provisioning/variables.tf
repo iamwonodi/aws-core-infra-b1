@@ -17,11 +17,11 @@ variable "name" {
 variable "engine" {
   type        = string
   default     = "postgres"
-  description = "The database's engine. The function speaks PostgreSQL only; another engine needs a driver adding to lambda/vendor/."
+  description = "The database's engine: \"postgres\" or \"mysql\". Another engine needs a driver adding to lambda/vendor/."
 
   validation {
-    condition     = var.engine == "postgres"
-    error_message = "The provisioning function speaks PostgreSQL only. For another engine, add its driver to lambda/vendor/ and teach provision.py to use it."
+    condition     = contains(["postgres", "mysql"], var.engine)
+    error_message = "The provisioning function speaks PostgreSQL and MySQL. For another engine, add its driver to lambda/vendor/ and teach provision.py to use it."
   }
 }
 
@@ -38,7 +38,7 @@ variable "database_port" {
 variable "admin_database" {
   type        = string
   default     = "postgres"
-  description = "Database the function connects to before a service's own database exists. PostgreSQL always has one called \"postgres\"."
+  description = "Database the function connects to before a service's own database exists. PostgreSQL always has one called \"postgres\"; a MySQL instance has only the one created with it."
 }
 
 variable "admin_secret_arn" {

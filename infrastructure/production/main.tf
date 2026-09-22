@@ -264,9 +264,9 @@ locals {
   # The engines that run on RDS. mongodb will run on DocumentDB instead.
   rds_engines = toset([for engine in var.database_engines : engine if contains(["postgres", "mysql"], engine)])
 
-  # The engines the provisioning function can create a service's database on.
-  # MySQL joins when the function learns to speak it.
-  provisioned_engines = setintersection(local.rds_engines, toset(["postgres"]))
+  # The engines the provisioning function can create a service's database on:
+  # every RDS engine.
+  provisioned_engines = setintersection(local.rds_engines, toset(["postgres", "mysql"]))
 
   rds_engine_settings = {
     postgres = {

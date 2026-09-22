@@ -1,11 +1,12 @@
 """
-Create one service's database and user on the managed database.
+Create one service's database and user on a managed database (PostgreSQL or MySQL).
 
 The EC2 database host runs core's SQL by exec-ing into the engine's container. A
 managed database has no container to exec into and sits in the isolated tier,
 which nothing outside the VPC can reach, so the same job is done by this function:
 it runs inside the VPC, reads the administrator credential and the service's own
-credential from Secrets Manager, and executes the same statements.
+credential from Secrets Manager, and executes the same statements. One function
+is deployed per engine; ENGINE says which it speaks.
 
 WHO CALLS IT. A service's infrastructure repository, with its own IAM role, after
 its apply. The payload names only the service; everything else is looked up here,
@@ -25,15 +26,17 @@ import json
 import logging
 import os
 import re
+import ssl
 import sys
 
-# The driver is committed next to this file (see vendor/README.md): the Lambda
-# runtimes carry no PostgreSQL driver, and a compiled one would have to match the
+# The drivers are committed next to this file (see vendor/README.md): the Lambda
+# runtimes carry no database driver, and a compiled one would have to match the
 # runtime's architecture.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "vendor"))
 
 import boto3  # noqa: E402  (the runtime provides it)
 import pg8000.dbapi  # noqa: E402
+import pymysql  # noqa: E402
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -149,6 +152,71 @@ def provision_schema(connection, user, admin):
     cursor.close()
 
 
+# ------------------------------------------------------------------------------
+# MySQL
+# ------------------------------------------------------------------------------
+
+
+def quote_mysql_identifier(value):
+    """Backquote an identifier that has already been checked against IDENTIFIER."""
+    if not IDENTIFIER.match(value):
+        raise ProvisioningError(f"'{value}' is not a plain identifier")
+    return "`" + value + "`"
+
+
+def connect_mysql(host, port, user, password, database):
+    # Encrypted, as the PostgreSQL connection is: pg8000's ssl_context=True
+    # encrypts without verifying the certificate, and this does the same. The
+    # RDS certificate authority is not in the runtime's trust store.
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+
+    try:
+        connection = pymysql.connect(
+            host=host,
+            port=int(port),
+            user=user,
+            password=password,
+            database=database,
+            ssl=context,
+            connect_timeout=15,
+            autocommit=True,
+        )
+    except Exception as error:
+        raise ProvisioningError(f"could not connect to {host}:{port} as {user}: {error}") from error
+
+    return connection
+
+
+def provision_mysql(connection, database, user, password):
+    """Create the database and the user, and grant that user everything on that database only."""
+    name = quote_mysql_identifier(database)
+    account = "'" + quote_mysql_identifier(user)[1:-1] + "'@'%'"
+    secret = quote_literal(password)
+
+    # In a database-level GRANT, "_" and "%" in the name are WILDCARDS. Service
+    # databases are the service name with "-" turned into "_", so an unescaped
+    # grant on `ab_c` would also cover `abxc`: another service's data. IDENTIFIER
+    # already rules out "%".
+    grant_name = "`" + database.replace("_", "\\_") + "`"
+
+    cursor = connection.cursor()
+
+    logger.info("Ensuring database %s and user %s.", database, user)
+    cursor.execute(f"CREATE DATABASE IF NOT EXISTS {name} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+
+    # '%' rather than a fixed host: the service's hosts change as its group scales.
+    cursor.execute(f"CREATE USER IF NOT EXISTS {account} IDENTIFIED BY {secret}")
+
+    # Set every time: a rotated secret then heals itself on the next apply.
+    cursor.execute(f"ALTER USER {account} IDENTIFIED BY {secret}")
+
+    cursor.execute(f"GRANT ALL PRIVILEGES ON {grant_name}.* TO {account}")
+
+    cursor.close()
+
+
 def handler(event, context):  # noqa: ARG001
     service = (event or {}).get("service_name", "")
 
@@ -159,6 +227,10 @@ def handler(event, context):  # noqa: ARG001
     port = os.environ["DATABASE_PORT"]
     admin_secret_arn = os.environ["ADMIN_SECRET_ARN"]
     admin_database = os.environ.get("ADMIN_DATABASE", "postgres")
+    engine = os.environ.get("ENGINE", "postgres")
+
+    if engine not in ("postgres", "mysql"):
+        raise ProvisioningError(f"this function does not speak '{engine}'")
 
     # The service's secret is named, not passed: the caller cannot point this at
     # another service's credential.
@@ -176,7 +248,17 @@ def handler(event, context):  # noqa: ARG001
     user = credentials["db_user"]
     password = credentials["db_password"]
 
-    logger.info("Provisioning %s on %s.", database, host)
+    logger.info("Provisioning %s on %s (%s).", database, host, engine)
+
+    if engine == "mysql":
+        connection = connect_mysql(host, port, admin["username"], admin["password"], admin_database)
+        try:
+            provision_mysql(connection, database, user, password)
+        finally:
+            connection.close()
+
+        logger.info("Provisioned %s.", service)
+        return {"service": service, "database": database, "user": user, "status": "provisioned"}
 
     connection = connect(host, port, admin["username"], admin["password"], admin_database)
     try:

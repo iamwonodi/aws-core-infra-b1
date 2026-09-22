@@ -98,6 +98,7 @@ resource "aws_lambda_function" "this" {
       DATABASE_PORT          = tostring(var.database_port)
       ADMIN_SECRET_ARN       = var.admin_secret_arn
       ADMIN_DATABASE         = var.admin_database
+      ENGINE                 = var.engine
       SERVICE_SECRET_PATTERN = local.service_secret_pattern
     }
   }
