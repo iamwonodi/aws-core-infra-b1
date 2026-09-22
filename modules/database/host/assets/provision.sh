@@ -852,7 +852,7 @@ elif [[ "${ENGINE}" == "mongodb" ]]; then
         --quiet \
         -u "${TRUE_USER}" \
         -p "${TRUE_PASS}" \
-        --authenticationDatabase "${TRUE_DB}" \
+        --authenticationDatabase admin \
         "${TRUE_DB}" < "${INIT_SCRIPT}"
 
   fi

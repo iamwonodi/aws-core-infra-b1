@@ -179,10 +179,6 @@ variable "database_engines" {
     error_message = "database_engines lists an engine more than once."
   }
 
-  validation {
-    condition     = !contains(var.database_engines, "mongodb")
-    error_message = "mongodb runs on Amazon DocumentDB, and its module does not exist yet. Remove it from database_engines until it does."
-  }
 }
 
 variable "database_schedule" {
@@ -205,6 +201,18 @@ variable "database_working_hours" {
   })
   default     = {}
   description = "The window database_schedule = \"working_hours\" runs the instances in: the days they start (MON ... SUN), the start and stop times (HH:MM, 24-hour) and the IANA time zone. They are stopped at the stop time every day, so one started by hand, or restarted by AWS after 7 days stopped, stops again that evening."
+}
+
+variable "documentdb_instance_count" {
+  type        = number
+  default     = 1
+  description = "Instances in the DocumentDB cluster (mongodb). The data is always stored in three zones; 2 or more instances also keep it available if one fails. Each instance is billed."
+}
+
+variable "documentdb_instance_class" {
+  type        = string
+  default     = "db.t4g.medium"
+  description = "DocumentDB instance class. db.t4g.medium is the smallest DocumentDB offers."
 }
 
 variable "database_instance_class" {

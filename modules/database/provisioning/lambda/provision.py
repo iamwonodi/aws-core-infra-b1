@@ -1,5 +1,6 @@
 """
-Create one service's database and user on a managed database (PostgreSQL or MySQL).
+Create one service's database and user on a managed database (PostgreSQL, MySQL
+or DocumentDB, MongoDB-compatible).
 
 The EC2 database host runs core's SQL by exec-ing into the engine's container. A
 managed database has no container to exec into and sits in the isolated tier,
@@ -37,6 +38,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "vendor"))
 import boto3  # noqa: E402  (the runtime provides it)
 import pg8000.dbapi  # noqa: E402
 import pymysql  # noqa: E402
+import pymongo  # noqa: E402
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -217,6 +219,61 @@ def provision_mysql(connection, database, user, password):
     cursor.close()
 
 
+# ------------------------------------------------------------------------------
+# DocumentDB (MongoDB-compatible)
+# ------------------------------------------------------------------------------
+
+
+def connect_mongodb(host, port, user, password):
+    # DocumentDB keeps every user in the admin database, so the administrator
+    # authenticates there. TLS is required by the cluster; like the other
+    # engines, the connection is encrypted without verifying the certificate.
+    # DocumentDB does not support retryable writes, and the cluster endpoint is
+    # always the writer, so the client talks to it directly.
+    try:
+        client = pymongo.MongoClient(
+            host=host,
+            port=int(port),
+            username=user,
+            password=password,
+            authSource="admin",
+            tls=True,
+            tlsAllowInvalidCertificates=True,
+            retryWrites=False,
+            directConnection=True,
+            serverSelectionTimeoutMS=15000,
+            connectTimeoutMS=15000,
+        )
+        client.admin.command("ping")
+    except Exception as error:
+        raise ProvisioningError(f"could not connect to {host}:{port} as {user}: {error}") from error
+
+    return client
+
+
+def provision_mongodb(client, database, user, password):
+    """Create the service's user, with readWrite on its own database and nothing else."""
+    if not IDENTIFIER.match(database) or not IDENTIFIER.match(user):
+        raise ProvisioningError("the database and user names must be plain identifiers")
+    quote_literal(password)  # refused before any command if it is not core's alphabet
+
+    # Every user lives in admin (DocumentDB puts it there whatever the context), so
+    # the application authenticates with authSource=admin. The role names the
+    # service's database explicitly. The database itself appears on first write.
+    roles = [{"role": "readWrite", "db": database}]
+
+    existing = client.admin.command("usersInfo", user).get("users", [])
+
+    if existing:
+        # Set every time: a rotated secret then heals itself, and the roles are
+        # put back if anyone widened them.
+        logger.info("Updating user %s.", user)
+        client.admin.command("updateUser", user, pwd=password, roles=roles)
+    else:
+        logger.info("Creating user %s.", user)
+        client.admin.command("createUser", user, pwd=password, roles=roles)
+
+
 def handler(event, context):  # noqa: ARG001
     service = (event or {}).get("service_name", "")
 
@@ -229,7 +286,7 @@ def handler(event, context):  # noqa: ARG001
     admin_database = os.environ.get("ADMIN_DATABASE", "postgres")
     engine = os.environ.get("ENGINE", "postgres")
 
-    if engine not in ("postgres", "mysql"):
+    if engine not in ("postgres", "mysql", "mongodb"):
         raise ProvisioningError(f"this function does not speak '{engine}'")
 
     # The service's secret is named, not passed: the caller cannot point this at
@@ -249,6 +306,16 @@ def handler(event, context):  # noqa: ARG001
     password = credentials["db_password"]
 
     logger.info("Provisioning %s on %s (%s).", database, host, engine)
+
+    if engine == "mongodb":
+        client = connect_mongodb(host, port, admin["username"], admin["password"])
+        try:
+            provision_mongodb(client, database, user, password)
+        finally:
+            client.close()
+
+        logger.info("Provisioned %s.", service)
+        return {"service": service, "database": database, "user": user, "status": "provisioned"}
 
     if engine == "mysql":
         connection = connect_mysql(host, port, admin["username"], admin["password"], admin_database)

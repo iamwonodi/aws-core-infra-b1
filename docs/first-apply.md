@@ -24,7 +24,7 @@ This writes `project_name`, `aws_region`, the domains and the state bucket into 
 
 Domains: production serves the base domain, staging `staging.<base>`, development `dev.<base>`.
 
-Database engines: `--staging-engines` and `--production-engines` choose, per environment, which engines run, each on its own RDS instance: `postgres`, `mysql`, both (`postgres,mysql`) or `none`. Every engine is billed while it runs, so list only what a service there uses. Omitted, an environment's list is left as it is, so re-running the script never changes it by accident; to change it later, re-run with the flag or edit `database_engines` in that environment's `terraform.tfvars`. Development's engines come from the database engines repository instead.
+Database engines: `--staging-engines` and `--production-engines` choose, per environment, which engines run, each on its own instance: `postgres` and `mysql` on RDS, `mongodb` on a DocumentDB cluster, any combination (`postgres,mongodb`), or `none`. Every engine is billed while it runs, so list only what a service there uses. Omitted, an environment's list is left as it is, so re-running the script never changes it by accident; to change it later, re-run with the flag or edit `database_engines` in that environment's `terraform.tfvars`. Development's engines come from the database engines repository instead.
 
 ## 2. Optional: local configuration
 

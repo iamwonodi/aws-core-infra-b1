@@ -93,7 +93,7 @@ class MySQL(unittest.TestCase):
         self.assertEqual(self.sql(), [])
 
     def test_an_engine_it_does_not_speak_is_refused(self):
-        os.environ["ENGINE"] = "mongodb"
+        os.environ["ENGINE"] = "redis"
         with self.assertRaises(self.mod.ProvisioningError):
             self.mod.handler({"service_name": "ab-c"}, None)
         self.assertEqual(self.connections, [])

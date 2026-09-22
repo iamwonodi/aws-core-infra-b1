@@ -110,3 +110,54 @@ run "a_malformed_time_is_refused" {
 
   expect_failures = [var.start]
 }
+
+run "a_documentdb_cluster_is_started_and_stopped_as_a_cluster" {
+  command = plan
+
+  variables {
+    clusters = {
+      mongodb = { id = "acme-staging-mongodb", arn = "arn:aws:rds:af-south-1:123456789012:cluster:acme-staging-mongodb" }
+    }
+  }
+
+  assert {
+    condition     = aws_scheduler_schedule.this["mongodb-start"].target[0].arn == "arn:aws:scheduler:::aws-sdk:docdb:startDBCluster" && aws_scheduler_schedule.this["mongodb-stop"].target[0].arn == "arn:aws:scheduler:::aws-sdk:docdb:stopDBCluster"
+    error_message = "a DocumentDB cluster is started and stopped through the cluster API"
+  }
+
+  assert {
+    condition     = jsondecode(aws_scheduler_schedule.this["mongodb-stop"].target[0].input).DBClusterIdentifier == "acme-staging-mongodb"
+    error_message = "the cluster schedule names the cluster"
+  }
+
+  assert {
+    condition     = length(aws_scheduler_schedule.this) == 6 && aws_scheduler_schedule.this["postgres-stop"].target[0].arn == "arn:aws:scheduler:::aws-sdk:rds:stopDBInstance"
+    error_message = "instances and clusters are scheduled side by side"
+  }
+}
+
+run "clusters_alone_are_enough" {
+  command = plan
+
+  variables {
+    instances = {}
+    clusters = {
+      mongodb = { id = "acme-staging-mongodb", arn = "arn:aws:rds:af-south-1:123456789012:cluster:acme-staging-mongodb" }
+    }
+  }
+
+  assert {
+    condition     = toset(keys(aws_scheduler_schedule.this)) == toset(["mongodb-start", "mongodb-stop"])
+    error_message = "a cluster alone gets its schedules"
+  }
+}
+
+run "nothing_to_schedule_is_refused" {
+  command = plan
+
+  variables {
+    instances = {}
+  }
+
+  expect_failures = [terraform_data.invariants]
+}

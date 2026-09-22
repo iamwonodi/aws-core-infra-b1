@@ -40,12 +40,11 @@ set -euo pipefail
 #   --private-domain BASE   same shape, for the VPC-only zone. Defaults to --domain.
 #   --staging-engines LIST, --production-engines LIST
 #                   the database engines that environment runs, each on its own
-#                   instance: comma-separated from postgres and mysql, or "none".
-#                   Omitted, the environment's current list is left as it is.
-#                   Each engine is billed while it runs, so list only what a
-#                   service there uses. (mongodb is refused until its DocumentDB
-#                   module exists.) Development's engines come from the database
-#                   engines repository instead.
+#                   instance: comma-separated from postgres, mysql (RDS) and
+#                   mongodb (DocumentDB), or "none". Omitted, the environment's
+#                   current list is left as it is. Each engine is billed while it
+#                   runs, so list only what a service there uses. Development's
+#                   engines come from the database engines repository instead.
 #   --dry-run       show what would change; write and call nothing.
 #   --skip-github   only rewrite files.
 #
@@ -116,9 +115,8 @@ check_engines() {
   IFS=',' read -ra engines <<< "${list}"
   for engine in "${engines[@]}"; do
     case "${engine}" in
-      postgres|mysql) ;;
-      mongodb) errors+=("${flag}: mongodb runs on Amazon DocumentDB, and its module does not exist yet.") ;;
-      *) errors+=("${flag}: '${engine}' is not an engine; use postgres and mysql.") ;;
+      postgres|mysql|mongodb) ;;
+      *) errors+=("${flag}: '${engine}' is not an engine; use postgres, mysql and mongodb.") ;;
     esac
     [[ "${seen}" == *",${engine},"* ]] && errors+=("${flag} lists ${engine} more than once.")
     seen+="${engine},"

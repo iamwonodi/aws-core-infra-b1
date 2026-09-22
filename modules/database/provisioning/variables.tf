@@ -17,11 +17,11 @@ variable "name" {
 variable "engine" {
   type        = string
   default     = "postgres"
-  description = "The database's engine: \"postgres\" or \"mysql\". Another engine needs a driver adding to lambda/vendor/."
+  description = "The database's engine: \"postgres\", \"mysql\" or \"mongodb\" (DocumentDB). Another engine needs a driver adding to lambda/vendor/."
 
   validation {
-    condition     = contains(["postgres", "mysql"], var.engine)
-    error_message = "The provisioning function speaks PostgreSQL and MySQL. For another engine, add its driver to lambda/vendor/ and teach provision.py to use it."
+    condition     = contains(["postgres", "mysql", "mongodb"], var.engine)
+    error_message = "The provisioning function speaks PostgreSQL, MySQL and MongoDB (DocumentDB). For another engine, add its driver to lambda/vendor/ and teach provision.py to use it."
   }
 }
 

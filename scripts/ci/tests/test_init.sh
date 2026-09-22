@@ -85,13 +85,12 @@ check "none empties an environment's list"             grep -qx 'database_engine
 check "and leaves the other environment alone"         grep -qx 'database_engines = \["postgres"\]' "${WORK}/repo/infrastructure/staging/terraform.tfvars"
 fresh; run --staging-engines mysql --dry-run > "${WORK}/dry.txt" 2>&1
 check "a dry run shows the list but writes nothing"    bash -c "grep -q 'database_engines=mysql' '${WORK}/dry.txt' && grep -qx 'database_engines = \[\]' '${WORK}/repo/infrastructure/staging/terraform.tfvars'"
-fresh; out="$(run --production-engines postgres,mongodb 2>&1)"; rc=$?
-check "mongodb is refused until its module exists"     bash -c "[ $rc -ne 0 ] && grep -q 'DocumentDB' <<< \"$out\""
-check "and nothing was written"                        grep -qx 'database_engines = \[\]' "${WORK}/repo/infrastructure/production/terraform.tfvars"
+fresh; run --production-engines postgres,mongodb >/dev/null 2>&1
+check "mongodb (DocumentDB) is accepted"               grep -qx 'database_engines = \["postgres", "mongodb"\]' "${WORK}/repo/infrastructure/production/terraform.tfvars"
 check "an unknown engine is refused"                   bad --project acme --region eu-west-1 --domain example.org --staging-engines redis
 check "a repeated engine is refused"                   bad --project acme --region eu-west-1 --domain example.org --staging-engines mysql,mysql
 check "an empty list is refused (say none)"            bad --project acme --region eu-west-1 --domain example.org --staging-engines ""
 check "a malformed list is refused"                    bad --project acme --region eu-west-1 --domain example.org --staging-engines "postgres, mysql"
 fresh; run --staging-engines postgres,mysql --production-engines postgres,mysql >/dev/null 2>&1
-check "the written lists are valid Terraform"          bash -c "cd '${WORK}/repo/infrastructure/production' && grep '^database_engines' terraform.tfvars | grep -qE '^database_engines = \\[(\"(postgres|mysql)\"(, )?)+\\]$'"
+check "the written lists are valid Terraform"          bash -c "cd '${WORK}/repo/infrastructure/production' && grep '^database_engines' terraform.tfvars | grep -qE '^database_engines = \\[(\"(postgres|mysql|mongodb)\"(, )?)+\\]$'"
 finish

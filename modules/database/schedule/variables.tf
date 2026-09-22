@@ -13,7 +13,17 @@ variable "instances" {
     id  = string
     arn = string
   }))
+  default     = {}
   description = "The RDS instances to start and stop, by engine: each one's identifier and ARN."
+}
+
+variable "clusters" {
+  type = map(object({
+    id  = string
+    arn = string
+  }))
+  default     = {}
+  description = "The DocumentDB clusters to start and stop, by engine: each one's identifier and ARN. A cluster starts and stops as a whole, instances included."
 }
 
 variable "days" {

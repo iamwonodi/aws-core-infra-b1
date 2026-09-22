@@ -251,7 +251,8 @@ module "deploy" {
 #
 #   postgres   RDS for PostgreSQL
 #   mysql      RDS for MySQL
-#   mongodb    DocumentDB, refused until its module exists (see variables.tf)
+#   mongodb    Amazon DocumentDB (MongoDB-compatible), a cluster of
+#              documentdb_instance_count instances
 #
 # Staging is sized for rehearsal, not load: the smallest useful instance, single-AZ.
 #
@@ -261,24 +262,49 @@ module "deploy" {
 ################################################################################
 
 locals {
-  # The engines that run on RDS. mongodb will run on DocumentDB instead.
-  rds_engines = toset([for engine in var.database_engines : engine if contains(["postgres", "mysql"], engine)])
+  # Every active engine, and the ones among them that run on RDS. mongodb runs on
+  # DocumentDB instead.
+  database_engines   = toset(var.database_engines)
+  rds_engines        = toset([for engine in var.database_engines : engine if contains(["postgres", "mysql"], engine)])
+  documentdb_enabled = contains(var.database_engines, "mongodb")
 
-  # The engines the provisioning function can create a service's database on:
-  # every RDS engine.
-  provisioned_engines = setintersection(local.rds_engines, toset(["postgres", "mysql"]))
+  # The provisioning function speaks every engine, so each active one gets one.
+  provisioned_engines = local.database_engines
+
+  # Where each active engine is, whichever service runs it.
+  database_endpoints = merge(
+    {
+      for engine in local.rds_engines : engine => {
+        host              = module.database[engine].address
+        port              = module.database[engine].port
+        security_group_id = module.database[engine].security_group_id
+      }
+    },
+    local.documentdb_enabled ? {
+      mongodb = {
+        host              = module.documentdb[0].endpoint
+        port              = module.documentdb[0].port
+        security_group_id = module.documentdb[0].security_group_id
+      }
+    } : {},
+  )
+
+  # The database the administrator connects to before a service's own exists.
+  admin_databases = {
+    postgres = "postgres"
+    mysql    = "platform"
+    mongodb  = "admin" # DocumentDB keeps every user there
+  }
 
   rds_engine_settings = {
     postgres = {
       # PostgreSQL always has a "postgres" database to connect to first.
       initial_database = null
-      admin_database   = "postgres"
       log_exports      = ["postgresql", "upgrade"]
     }
     mysql = {
       # MySQL has no database until one is created with the instance.
       initial_database = "platform"
-      admin_database   = "platform"
       # error only: the general and audit logs bill for every statement.
       log_exports = ["error"]
     }
@@ -286,9 +312,9 @@ locals {
 }
 
 resource "random_password" "database_admin" {
-  for_each = local.rds_engines
+  for_each = local.database_engines
 
-  # 40 fits every engine: MySQL accepts at most 41 characters.
+  # 40 fits every engine: MySQL accepts at most 41 characters, DocumentDB 100.
   length  = 40
   special = true
 
@@ -300,7 +326,7 @@ resource "random_password" "database_admin" {
 
 module "database_admin_secret" {
   source   = "git::https://github.com/iamwonodi/terraform-aws-secrets-vault.git?ref=v1.0.0"
-  for_each = local.rds_engines
+  for_each = local.database_engines
 
   project_name = var.project_name
   environment  = local.environment
@@ -310,9 +336,9 @@ module "database_admin_secret" {
     username = local.database_admin_username
     password = random_password.database_admin[each.key].result
     engine   = each.key
-    host     = module.database[each.key].address
-    port     = tostring(module.database[each.key].port)
-    dbname   = local.rds_engine_settings[each.key].admin_database
+    host     = local.database_endpoints[each.key].host
+    port     = tostring(local.database_endpoints[each.key].port)
+    dbname   = local.admin_databases[each.key]
   }
 }
 
@@ -353,6 +379,36 @@ module "database" {
   tags = local.common_tags
 }
 
+# MongoDB: one DocumentDB cluster. Its instances are spread across the isolated
+# subnets' zones; with more than one, a reader takes over if the writer fails.
+module "documentdb" {
+  source = "git::https://github.com/iamwonodi/terraform-aws-documentdb.git?ref=v1.0.0"
+  count  = local.documentdb_enabled ? 1 : 0
+
+  project_name = var.project_name
+  environment  = local.environment
+  name         = "mongodb"
+
+  master_username = local.database_admin_username
+  master_password = random_password.database_admin["mongodb"].result
+
+  instance_count = var.documentdb_instance_count
+  instance_class = var.documentdb_instance_class
+
+  backup_retention_period = var.database_backup_retention_days
+
+  vpc_id     = module.network.vpc_id
+  subnet_ids = module.network.isolated_subnet_ids
+
+  # Only the tiers whose hosts run the services may reach it.
+  allowed_security_group_ids = [
+    module.network.private_security_group_id,
+    module.network.internal_security_group_id,
+  ]
+
+  tags = local.common_tags
+}
+
 # The instances have no container to run core's provisioning script in, so a
 # Lambda inside the VPC does that job, one per engine. A service's infrastructure
 # repository invokes its engine's function after its own apply.
@@ -364,11 +420,11 @@ module "database_provisioning" {
   environment  = local.environment
 
   engine         = each.key
-  admin_database = local.rds_engine_settings[each.key].admin_database
+  admin_database = local.admin_databases[each.key]
 
-  database_host              = module.database[each.key].address
-  database_port              = module.database[each.key].port
-  database_security_group_id = module.database[each.key].security_group_id
+  database_host              = local.database_endpoints[each.key].host
+  database_port              = local.database_endpoints[each.key].port
+  database_security_group_id = local.database_endpoints[each.key].security_group_id
   admin_secret_arn           = module.database_admin_secret[each.key].secret_arn
 
   vpc_id     = module.network.vpc_id
@@ -377,11 +433,12 @@ module "database_provisioning" {
   tags = local.common_tags
 }
 
-# Staging only: production's instances always run. With "working_hours", the
-# instances start and stop on a schedule; see modules/database/schedule.
+# Staging only: production's databases always run. With "working_hours", the RDS
+# instances and the DocumentDB cluster start and stop on a schedule; see
+# modules/database/schedule.
 module "database_schedule" {
   source = "../../modules/database/schedule"
-  count  = var.database_schedule == "working_hours" && length(local.rds_engines) > 0 ? 1 : 0
+  count  = var.database_schedule == "working_hours" && length(local.database_engines) > 0 ? 1 : 0
 
   project_name = var.project_name
   environment  = local.environment
@@ -392,6 +449,13 @@ module "database_schedule" {
       arn = module.database[engine].arn
     }
   }
+
+  clusters = local.documentdb_enabled ? {
+    mongodb = {
+      id  = module.documentdb[0].id
+      arn = module.documentdb[0].arn
+    }
+  } : {}
 
   days     = var.database_working_hours.days
   start    = var.database_working_hours.start
@@ -434,9 +498,9 @@ module "platform_contract" {
   database_provision_function_name = try(module.database_provisioning["postgres"].function_name, null)
 
   database_engines = {
-    for engine in local.rds_engines : engine => {
-      host               = module.database[engine].address
-      port               = module.database[engine].port
+    for engine, endpoint in local.database_endpoints : engine => {
+      host               = endpoint.host
+      port               = endpoint.port
       provision_function = try(module.database_provisioning[engine].function_name, null)
     }
   }

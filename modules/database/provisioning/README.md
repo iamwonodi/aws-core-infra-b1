@@ -49,7 +49,7 @@ It runs on every apply of the service, so every step is conditional.
 
 **The driver is committed.** The Lambda runtimes carry no database driver, and a compiled one would have to match the runtime's architecture, so pure-Python `pg8000` is vendored in `lambda/vendor/` (see its README, including how to refresh it).
 
-**PostgreSQL and MySQL**, one function per engine (`engine`). On MySQL it creates the database (utf8mb4) and a user for `'%'`, sets the password every time, and grants everything on that database only. The grant escapes `_`, which MySQL otherwise treats as a wildcard in a database name: unescaped, service `ab-c`'s grant would also cover service `abxc`'s database. Another engine needs its driver adding and `provision.py` teaching to use it; the `engine` variable refuses anything else rather than failing at run time.
+**PostgreSQL, MySQL and MongoDB (DocumentDB)**, one function per engine (`engine`). On DocumentDB it creates the service's user in `admin` (where DocumentDB keeps every user) with `readWrite` on the service's database only, and sets its password and roles every time; the database itself appears on first write. On MySQL it creates the database (utf8mb4) and a user for `'%'`, sets the password every time, and grants everything on that database only. The grant escapes `_`, which MySQL otherwise treats as a wildcard in a database name: unescaped, service `ab-c`'s grant would also cover service `abxc`'s database. Another engine needs its driver adding and `provision.py` teaching to use it; the `engine` variable refuses anything else rather than failing at run time.
 
 Both connections are encrypted but do not verify the server's certificate: the RDS certificate authority is not in the Lambda runtime's trust store, and the traffic never leaves the isolated tier.
 
@@ -67,11 +67,11 @@ Placing a function in a VPC needs `ec2:CreateNetworkInterface` and its companion
 | --- | --- | --- |
 | `project_name`, `environment` | — | part of the function's name |
 | `name` | engine | distinguishes two functions in one environment |
-| `engine` | `postgres` | `postgres` or `mysql` |
+| `engine` | `postgres` | `postgres`, `mysql` or `mongodb` |
 | `database_host`, `database_port` | — | what to connect to |
 | `database_security_group_id` | — | an ingress rule is added to it for the function |
 | `admin_secret_arn` | — | the administrator credential |
-| `admin_database` | `postgres` | connected to before a service's database exists (core uses `platform` on MySQL) |
+| `admin_database` | `postgres` | connected to before a service's database exists (core uses `platform` on MySQL, `admin` on DocumentDB) |
 | `service_secret_pattern` | `<project>-{service}-<environment>-secret-vault` | how a service's secret is named |
 | `vpc_id`, `subnet_ids` | — | the same isolated subnets as the database |
 | `log_retention_days` | `30` | |

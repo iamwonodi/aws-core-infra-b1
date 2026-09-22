@@ -85,6 +85,7 @@ check "mysql: core's SQL, with identifiers prepared"      bash -c "execn 1 | jq 
 setup; request auth mongodb; echo running > "$FAKE_ROOT/compose-state/db-mongodb"
 run auth >/dev/null 2>&1
 check "mongodb: runs mongosh as the administrator"        bash -c "execn 1 | jq -e '.args | index(\"mongosh\") != null' >/dev/null && execn 1 | jq -r .stdin | grep -q 'createUser'"
+check "mongodb: the user lives in admin, as DocumentDB's do" bash -c "execn 1 | jq -r .stdin | grep -q 'getSiblingDB(\"admin\")' && execn 1 | jq -r .stdin | grep -q 'role: \"readWrite\", db: target_db'"
 
 echo "== refusals"
 setup
