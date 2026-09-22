@@ -70,6 +70,11 @@ locals {
       # How the platforms team's pipeline applies the engines it publishes to the
       # EC2 host. Null on a managed database, which runs no published engines.
       update_document = var.database_update_document_name
+
+      # Every managed instance, by engine. host and provision_function above keep
+      # describing PostgreSQL for services written before an environment could
+      # run more than one engine.
+      engines = var.database_engines
     }
 
     tiers = var.tiers

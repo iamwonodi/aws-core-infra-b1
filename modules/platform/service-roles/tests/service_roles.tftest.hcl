@@ -439,10 +439,10 @@ run "a_dedicated_infra_role_may_invoke_the_provisioning_function_and_nothing_els
   command = plan
 
   variables {
-    hosting_model                   = "dedicated"
-    environment                     = "production"
-    permissions_boundary_arn        = "arn:aws:iam::123456789012:policy/platform/core-service-boundary"
-    database_provision_function_arn = "arn:aws:lambda:af-south-1:123456789012:function:core-production-postgres-provision"
+    hosting_model                    = "dedicated"
+    environment                      = "production"
+    permissions_boundary_arn         = "arn:aws:iam::123456789012:policy/platform/core-service-boundary"
+    database_provision_function_arns = ["arn:aws:lambda:af-south-1:123456789012:function:core-production-postgres-provision"]
 
     tiers = {
       private = { listener_arn = "arn:aws:elasticloadbalancing:af-south-1:123456789012:listener/app/x/1/2" }
@@ -489,4 +489,60 @@ run "a_dedicated_infra_entry_needs_the_boundary" {
   }
 
   expect_failures = [terraform_data.service_roles_invariants]
+}
+
+run "a_dedicated_infra_role_may_invoke_every_engines_provisioning_function" {
+  command = plan
+
+  variables {
+    hosting_model            = "dedicated"
+    environment              = "production"
+    permissions_boundary_arn = "arn:aws:iam::123456789012:policy/platform/core-service-boundary"
+    database_provision_function_arns = [
+      "arn:aws:lambda:af-south-1:123456789012:function:core-production-mysql-provision",
+      "arn:aws:lambda:af-south-1:123456789012:function:core-production-postgres-provision",
+    ]
+
+    tiers = {
+      private = { listener_arn = "arn:aws:elasticloadbalancing:af-south-1:123456789012:listener/app/x/1/2" }
+    }
+    entries = {
+      "acme/auth-infra" = { service_name = "auth", kind = "infra", tier = "private", owner_id = "1", repository_id = "2" }
+    }
+  }
+
+  assert {
+    condition = alltrue([
+      for fn in ["function:core-production-postgres-provision", "function:core-production-mysql-provision"] :
+      strcontains(output.service_roles["acme/auth-infra"].inline_policies["service-infra-access"], fn)
+    ])
+    error_message = "the infra role must be able to invoke each engine's provisioning function"
+  }
+
+  assert {
+    condition     = sum([for policy in values(output.service_roles["acme/auth-infra"].inline_policies) : length(policy)]) <= 10240
+    error_message = "the infra role's inline policies must stay within IAM's 10,240 characters with two engines"
+  }
+}
+
+run "no_managed_database_grants_no_invoke" {
+  command = plan
+
+  variables {
+    hosting_model            = "dedicated"
+    environment              = "production"
+    permissions_boundary_arn = "arn:aws:iam::123456789012:policy/platform/core-service-boundary"
+
+    tiers = {
+      private = { listener_arn = "arn:aws:elasticloadbalancing:af-south-1:123456789012:listener/app/x/1/2" }
+    }
+    entries = {
+      "acme/auth-infra" = { service_name = "auth", kind = "infra", tier = "private", owner_id = "1", repository_id = "2" }
+    }
+  }
+
+  assert {
+    condition     = !strcontains(output.service_roles["acme/auth-infra"].inline_policies["service-infra-access"], "lambda:InvokeFunction")
+    error_message = "with no managed database, the infra role may invoke nothing"
+  }
 }

@@ -69,8 +69,8 @@ module "service_roles" {
   permissions_boundary_arn = aws_iam_policy.service_boundary.arn
 
   # Lets each service's infra repository create its own database on the managed
-  # instance, through that one function and nothing else.
-  database_provision_function_arn = module.database_provisioning.function_arn
+  # instances, through their provisioning functions and nothing else.
+  database_provision_function_arns = [for engine in sort(tolist(local.provisioned_engines)) : module.database_provisioning[engine].function_arn]
 
   tiers = {
     private = {
@@ -239,20 +239,56 @@ module "deploy" {
 }
 
 ################################################################################
-# MANAGED DATABASE
+# MANAGED DATABASES
 #
-# One RDS instance in the isolated tier, shared by the services of this
-# environment: each service gets its own database and user on it, exactly as it
-# does on the EC2 database host that development uses.
+# One instance per ACTIVE engine, in the isolated tier, shared by the services of
+# this environment: each service gets its own database and user on it, exactly as
+# it does on the EC2 database host that development uses.
+#
+# Every engine the platform offers is declared here; none is created until it is
+# listed in database_engines (terraform.tfvars). Nothing runs, and nothing is
+# billed, for an engine this environment does not use.
+#
+#   postgres   RDS for PostgreSQL
+#   mysql      RDS for MySQL
+#   mongodb    DocumentDB, refused until its module exists (see variables.tf)
 #
 # Production runs a standby in a second availability zone. The standby serves no reads; it exists to fail over to.
 #
-# The administrator credential is generated and stored HERE. The module takes it
-# as an input rather than owning one, so it lives with every other secret this
-# platform generates.
+# The administrator credentials are generated and stored HERE. The module takes
+# them as inputs rather than owning them, so they live with every other secret
+# this platform generates.
 ################################################################################
 
+locals {
+  # The engines that run on RDS. mongodb will run on DocumentDB instead.
+  rds_engines = toset([for engine in var.database_engines : engine if contains(["postgres", "mysql"], engine)])
+
+  # The engines the provisioning function can create a service's database on.
+  # MySQL joins when the function learns to speak it.
+  provisioned_engines = setintersection(local.rds_engines, toset(["postgres"]))
+
+  rds_engine_settings = {
+    postgres = {
+      # PostgreSQL always has a "postgres" database to connect to first.
+      initial_database = null
+      admin_database   = "postgres"
+      log_exports      = ["postgresql", "upgrade"]
+    }
+    mysql = {
+      # MySQL has no database until one is created with the instance.
+      initial_database = "platform"
+      admin_database   = "platform"
+      # error only: the general and audit logs bill for every statement.
+      log_exports = ["error"]
+    }
+  }
+}
+
 resource "random_password" "database_admin" {
+  for_each = local.rds_engines
+
+  # 40 fits every engine: MySQL accepts at most 41 characters.
   length  = 40
   special = true
 
@@ -263,34 +299,40 @@ resource "random_password" "database_admin" {
 }
 
 module "database_admin_secret" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-secrets-vault.git?ref=v1.0.0"
+  source   = "git::https://github.com/iamwonodi/terraform-aws-secrets-vault.git?ref=v1.0.0"
+  for_each = local.rds_engines
 
   project_name = var.project_name
   environment  = local.environment
-  service_name = "database-admin"
+  service_name = "database-admin-${each.key}"
 
   secret_kv_pairs = {
     username = local.database_admin_username
-    password = random_password.database_admin.result
-    engine   = "postgres"
-    host     = module.database.address
-    port     = tostring(module.database.port)
-    dbname   = "postgres"
+    password = random_password.database_admin[each.key].result
+    engine   = each.key
+    host     = module.database[each.key].address
+    port     = tostring(module.database[each.key].port)
+    dbname   = local.rds_engine_settings[each.key].admin_database
   }
 }
 
 module "database" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-rds-instance.git?ref=v1.0.0"
+  source   = "git::https://github.com/iamwonodi/terraform-aws-rds-instance.git?ref=v1.0.0"
+  for_each = local.rds_engines
 
   project_name = var.project_name
   environment  = local.environment
 
-  engine         = "postgres"
+  # The engine also names the instance (<project>-<environment>-<engine>), so two
+  # engines never collide.
+  engine                = each.key
+  initial_database_name = local.rds_engine_settings[each.key].initial_database
+
   instance_class = var.database_instance_class
   multi_az       = var.database_multi_az
 
   master_username = local.database_admin_username
-  master_password = random_password.database_admin.result
+  master_password = random_password.database_admin[each.key].result
 
   allocated_storage     = var.database_allocated_storage
   max_allocated_storage = var.database_max_allocated_storage
@@ -306,24 +348,28 @@ module "database" {
     module.network.internal_security_group_id,
   ]
 
-  enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
+  enabled_cloudwatch_logs_exports = local.rds_engine_settings[each.key].log_exports
 
   tags = local.common_tags
 }
 
-# The instance has no container to run core's provisioning script in, so a Lambda
-# inside the VPC does that job. A service's infrastructure repository invokes it
-# after its own apply.
+# The instances have no container to run core's provisioning script in, so a
+# Lambda inside the VPC does that job, one per engine. A service's infrastructure
+# repository invokes its engine's function after its own apply.
 module "database_provisioning" {
-  source = "../../modules/database/provisioning"
+  source   = "../../modules/database/provisioning"
+  for_each = local.provisioned_engines
 
   project_name = var.project_name
   environment  = local.environment
 
-  database_host              = module.database.address
-  database_port              = module.database.port
-  database_security_group_id = module.database.security_group_id
-  admin_secret_arn           = module.database_admin_secret.secret_arn
+  engine         = each.key
+  admin_database = local.rds_engine_settings[each.key].admin_database
+
+  database_host              = module.database[each.key].address
+  database_port              = module.database[each.key].port
+  database_security_group_id = module.database[each.key].security_group_id
+  admin_secret_arn           = module.database_admin_secret[each.key].secret_arn
 
   vpc_id     = module.network.vpc_id
   subnet_ids = module.network.isolated_subnet_ids
@@ -358,8 +404,18 @@ module "platform_contract" {
   deploy_bucket_name         = module.deploy.bucket_name
   scripts_manifest_parameter = module.deploy.scripts_manifest_parameter
 
-  database_host                    = module.database.address
-  database_provision_function_name = module.database_provisioning.function_name
+  # The single-database fields keep describing PostgreSQL, for services written
+  # before an environment could run more than one engine.
+  database_host                    = try(module.database["postgres"].address, null)
+  database_provision_function_name = try(module.database_provisioning["postgres"].function_name, null)
+
+  database_engines = {
+    for engine in local.rds_engines : engine => {
+      host               = module.database[engine].address
+      port               = module.database[engine].port
+      provision_function = try(module.database_provisioning[engine].function_name, null)
+    }
+  }
 
   assets_bucket_name         = module.edge.assets_bucket_id
   isolated_security_group_id = module.network.isolated_security_group_id

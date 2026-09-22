@@ -87,7 +87,7 @@ The EC2 database host runs whatever the platforms team publishes. **Until an eng
 2. Send `<project>-database-update`.
 3. The engine's pipeline publishes its port at `/<project>/database/engines/postgres/port` and opens it on the isolated security group.
 
-Staging and production need none of this: core's apply creates the RDS instance directly.
+Staging and production need none of this: core's apply creates one RDS instance for each engine listed in that environment's `database_engines` (`infrastructure/<env>/terraform.tfvars`). The list ships empty, so set it before a service there needs a database.
 
 ---
 

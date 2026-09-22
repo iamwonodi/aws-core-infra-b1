@@ -164,10 +164,31 @@ variable "assets_noncurrent_version_expiration_days" {
 # MANAGED DATABASE
 ################################################################################
 
+variable "database_engines" {
+  type        = list(string)
+  default     = []
+  description = "The database engines this environment runs, each on its own instance: any of \"postgres\", \"mysql\" and \"mongodb\". Empty runs none. Set per environment by scripts/init-project.sh."
+
+  validation {
+    condition     = alltrue([for engine in var.database_engines : contains(["postgres", "mysql", "mongodb"], engine)])
+    error_message = "database_engines may contain only \"postgres\", \"mysql\" and \"mongodb\"."
+  }
+
+  validation {
+    condition     = length(distinct(var.database_engines)) == length(var.database_engines)
+    error_message = "database_engines lists an engine more than once."
+  }
+
+  validation {
+    condition     = !contains(var.database_engines, "mongodb")
+    error_message = "mongodb runs on Amazon DocumentDB, and its module does not exist yet. Remove it from database_engines until it does."
+  }
+}
+
 variable "database_instance_class" {
   type        = string
   default     = "db.t4g.micro"
-  description = "RDS instance class for this environment's database."
+  description = "RDS instance class for each of this environment's database instances."
 }
 
 variable "database_multi_az" {

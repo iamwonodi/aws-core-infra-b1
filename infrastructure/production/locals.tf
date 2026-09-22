@@ -6,9 +6,10 @@ locals {
 
   # Must match the bucket named in backend.tf (backend blocks cannot use
   # variables). scripts/bootstrap-environment.sh creates it with this name.
-  # The engines reserve "admin", "postgres" and "root", so the project's own name
-  # is used instead.
-  database_admin_username = "${replace(var.project_name, "-", "_")}_admin"
+  # The engines reserve "admin", "postgres" and "root". RDS allows at most 16
+  # letters, digits or underscores, which a name built from the project (up to 16
+  # characters itself) could exceed, so it is fixed.
+  database_admin_username = "platform_admin"
 
   state_bucket_name = "${var.project_name}-${local.environment}-tfstate"
 

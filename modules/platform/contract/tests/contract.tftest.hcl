@@ -235,3 +235,44 @@ run "an_oversized_contract_is_rejected" {
 
   expect_failures = [terraform_data.contract_invariants]
 }
+
+run "a_managed_environment_publishes_every_engine" {
+  command = plan
+
+  variables {
+    hosting_model                    = "dedicated"
+    database_provision_document_name = null
+    database_provision_function_name = "core-production-postgres-provision"
+    database_engines = {
+      postgres = { host = "core-production-postgres.x.af-south-1.rds.amazonaws.com", port = 5432, provision_function = "core-production-postgres-provision" }
+      mysql    = { host = "core-production-mysql.x.af-south-1.rds.amazonaws.com", port = 3306 }
+    }
+  }
+
+  assert {
+    condition     = jsondecode(output.config_json).database.engines.mysql.port == 3306 && jsondecode(output.config_json).database.engines.postgres.provision_function == "core-production-postgres-provision"
+    error_message = "every managed engine is published with its host, port and provisioning function"
+  }
+
+  assert {
+    condition     = jsondecode(output.config_json).database.engines.mysql.provision_function == null
+    error_message = "an engine without a provisioning function says so"
+  }
+
+  assert {
+    condition     = jsondecode(output.config_json).schema_version == 1
+    error_message = "adding database.engines is compatible: schema_version stays 1"
+  }
+}
+
+run "an_unknown_engine_is_refused" {
+  command = plan
+
+  variables {
+    database_engines = {
+      redis = { host = "x", port = 6379 }
+    }
+  }
+
+  expect_failures = [var.database_engines]
+}

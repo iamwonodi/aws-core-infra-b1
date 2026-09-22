@@ -171,7 +171,7 @@ locals {
 
   # On a managed database there is no host to send a document to: the service's
   # infra repository invokes core's provisioning function instead.
-  managed_provisioning_enabled = var.database_provision_function_arn != null
+  managed_provisioning_enabled = length(var.database_provision_function_arns) > 0
 
   deploy_bucket = coalesce(var.deploy_bucket_name, "unset")
   assets_bucket = coalesce(var.assets_bucket_name, "unset")
@@ -467,7 +467,7 @@ locals {
         Sid      = "InvokeDatabaseProvisioning"
         Effect   = "Allow"
         Action   = ["lambda:InvokeFunction"]
-        Resource = coalesce(var.database_provision_function_arn, "unset")
+        Resource = var.database_provision_function_arns
       }),
     ] : []
   }

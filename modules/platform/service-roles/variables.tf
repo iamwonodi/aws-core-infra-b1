@@ -99,10 +99,10 @@ variable "database_provision_document_name" {
   description = "SSM document that creates one service's database and user on the database host. A service's infra repository may send this document, and nothing else, to that host. Null in an environment without an EC2 database host."
 }
 
-variable "database_provision_function_arn" {
-  type        = string
-  default     = null
-  description = "Lambda that creates a service's database and user on a managed database. A service's infra repository may invoke this function, and nothing else. Null in an environment whose database is the EC2 host."
+variable "database_provision_function_arns" {
+  type        = list(string)
+  default     = []
+  description = "Lambdas that create a service's database and user on the managed databases, one per engine. A service's infra repository may invoke these functions, and nothing else. Empty in an environment whose database is the EC2 host, or that runs no managed database."
 }
 
 variable "database_service_name" {

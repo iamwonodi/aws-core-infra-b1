@@ -102,6 +102,21 @@ variable "database_update_document_name" {
   description = "SSM document the platforms team's pipeline sends to apply the database engines it published. Null where there is no EC2 database host (a managed database runs no published engines)."
 }
 
+variable "database_engines" {
+  type = map(object({
+    host               = string
+    port               = number
+    provision_function = optional(string)
+  }))
+  default     = {}
+  description = "The managed database instances, one per active engine: where each is and which Lambda provisions a service's database on it (null until the function speaks that engine). Empty in development, whose engines run on the EC2 host and publish their ports as SSM parameters."
+
+  validation {
+    condition     = alltrue([for engine in keys(var.database_engines) : contains(["postgres", "mysql", "mongodb"], engine)])
+    error_message = "database_engines may be keyed only by postgres, mysql and mongodb."
+  }
+}
+
 variable "isolated_security_group_id" {
   type        = string
   default     = null

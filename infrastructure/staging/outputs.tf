@@ -35,14 +35,14 @@ output "internal_alb_https_listener_arn" {
   sensitive   = true
 }
 
-output "database_host" {
-  description = "Address services connect to."
-  value       = module.database.address
+output "database_hosts" {
+  description = "Address of each active engine's instance, by engine."
+  value       = { for engine, database in module.database : engine => database.address }
 }
 
-output "database_provision_function_name" {
-  description = "Lambda that creates a service's database and user."
-  value       = module.database_provisioning.function_name
+output "database_provision_function_names" {
+  description = "Lambda that creates a service's database and user, by engine."
+  value       = { for engine, provisioning in module.database_provisioning : engine => provisioning.function_name }
 }
 
 output "ami_parameter_name" {

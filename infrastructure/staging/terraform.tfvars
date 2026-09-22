@@ -27,3 +27,8 @@ public_summary_cidr   = "10.20.0.0/20"
 private_summary_cidr  = "10.20.16.0/20"
 internal_summary_cidr = "10.20.32.0/20"
 isolated_summary_cidr = "10.20.48.0/20"
+
+# The database engines this environment runs, each on its own instance. Any of
+# "postgres", "mysql" ("mongodb" once its DocumentDB module exists). Empty runs
+# none, and costs nothing.
+database_engines = []
