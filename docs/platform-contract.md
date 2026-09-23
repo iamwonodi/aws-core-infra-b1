@@ -66,7 +66,8 @@ resource "terraform_data" "contract_version" {
 | `tiers.<tier>.subnet_ids` | (dedicated) where a service's own hosts go, so no service repository hard-codes the network. Null on a shared fleet |
 | `tiers.<tier>.listener_arn` | attach its ALB rule (the rule must carry the tag `Service = <service>`) |
 | `tiers.<tier>.asg_name` | attach its target group to the tier's ASG |
-| `tiers.<tier>.security_group_id`, `alb_security_group_id` | allow the tier's ALB to reach its service port |
+| `tiers.<tier>.security_group_id` | the tier's own security group, which the databases and the Secrets Manager (and, in development, every other) VPC endpoint admit. On a shared fleet, open the service port on it for the tier's ALB. With dedicated hosting, put it on the service's own hosts as well as their own group, or they can reach neither their database nor their secret. It opens nothing on the hosts: it has no inbound rules of its own |
+| `tiers.<tier>.alb_security_group_id` | allow the tier's ALB to reach its service port |
 | `buckets.deploy` | publish `<tier>/<service>/docker-compose.yml` and `.env` |
 | `buckets.assets` | publish static files under `static/<service>/` (set `STATIC_URL` to `/static/<service>/`) |
 | `fleet_update_document` | redeploy: send this SSM document, and nothing else, to the tier's hosts |
@@ -77,7 +78,7 @@ resource "terraform_data" "contract_version" {
 | `database.engines` | (managed databases, staging and production) every active engine, by name: `{"postgres": {"host", "port", "provision_function"}, "mysql": {...}}`. A service connects to its engine's `host` and `port` and provisions through its `provision_function`, which is null while the function does not yet speak that engine. A MongoDB service (DocumentDB) authenticates with `authSource=admin`, over TLS, with `retryWrites=false`; development's MongoDB accepts the same. Empty in development |
 | `database.update_document` | (the platforms team's pipeline, development only) apply the engines it published under `database/` in the deploy bucket. Null on a managed database |
 
-In a `dedicated` environment `buckets.deploy`, `fleet_update_document`, `database` and the tiers' `security_group_id` and `asg_name` are `null`: each service has its own configuration bucket and update document, which its infra repository creates and describes in `/<project>/services/<service>/config`.
+In a `dedicated` environment `fleet_update_document`, `database.provision_document`, `database.update_document` and the tiers' `asg_name` are `null`: each service has its own configuration bucket and update document, which its infra repository creates and describes in `/<project>/services/<service>/config`. `buckets.deploy` is still set there, because the service's hosts install core's scripts from its `_platform/` prefix.
 
 ## What is deliberately not in it
 

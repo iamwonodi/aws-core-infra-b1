@@ -498,9 +498,12 @@ module "platform_contract" {
     {
       # Services here create their own hosts, so the contract tells them where the
       # tier's subnets are rather than making every service repository hard-code them.
+      # Their hosts also wear the tier's security group: the databases and the
+      # Secrets Manager endpoint admit that group, not each service's own.
       private = {
         listener_arn          = nonsensitive(module.edge.private_alb_https_listener_arn)
         alb_security_group_id = module.edge.private_alb_security_group_id
+        security_group_id     = module.network.private_security_group_id
         subnet_ids            = module.network.private_subnet_ids
       }
     },
@@ -508,6 +511,7 @@ module "platform_contract" {
       internal = {
         listener_arn          = nonsensitive(module.edge.internal_alb_https_listener_arn)
         alb_security_group_id = module.edge.internal_alb_security_group_id
+        security_group_id     = module.network.internal_security_group_id
         subnet_ids            = module.network.internal_subnet_ids
       }
     } : {},

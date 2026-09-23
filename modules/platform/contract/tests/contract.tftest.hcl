@@ -147,6 +147,7 @@ run "a_dedicated_tier_publishes_where_its_hosts_go" {
       private = {
         listener_arn          = "arn:aws:elasticloadbalancing:af-south-1:123456789012:listener/app/x/1/2"
         alb_security_group_id = "sg-0alb"
+        security_group_id     = "sg-0priv"
         subnet_ids            = ["subnet-0a", "subnet-0b"]
       }
     }
@@ -155,6 +156,11 @@ run "a_dedicated_tier_publishes_where_its_hosts_go" {
   assert {
     condition     = jsondecode(output.config_json).tiers.private.subnet_ids == ["subnet-0a", "subnet-0b"]
     error_message = "a service creating its own hosts learns the tier's subnets from the contract, rather than hard-coding them"
+  }
+
+  assert {
+    condition     = jsondecode(output.config_json).tiers.private.security_group_id == "sg-0priv"
+    error_message = "a service creating its own hosts learns the tier's security group, which the databases and the VPC endpoints admit"
   }
 }
 

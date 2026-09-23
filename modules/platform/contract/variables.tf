@@ -137,7 +137,7 @@ variable "tiers" {
     asg_name              = optional(string)
     subnet_ids            = optional(list(string))
   }))
-  description = "The resources of each tier a service can be placed in. listener_arn and alb_security_group_id are always present; security_group_id and asg_name are the shared fleet's, present only when hosting_model is \"shared\"; subnet_ids are where a service's own hosts go when it is \"dedicated\"."
+  description = "The resources of each tier a service can be placed in. listener_arn, alb_security_group_id and security_group_id are always present; security_group_id is the tier's own group, which the databases and the VPC endpoints admit, so every host in the tier wears it: the shared fleet's hosts in \"shared\" hosting, a service's own hosts in \"dedicated\". asg_name is the shared fleet's, present only when hosting_model is \"shared\"; subnet_ids are where a service's own hosts go when it is \"dedicated\"."
 
   validation {
     condition     = alltrue([for name in keys(var.tiers) : contains(["private", "internal"], name)])
