@@ -806,7 +806,7 @@ resource "terraform_data" "service_roles_invariants" {
 
     precondition {
       condition     = length(local.entries_with_unknown_tier) == 0
-      error_message = "These entries name a tier that does not exist in this environment: ${join(", ", local.entries_with_unknown_tier)}. Available tiers: ${join(", ", keys(var.tiers))}."
+      error_message = "These entries name a tier that does not exist in this environment: ${join(", ", local.entries_with_unknown_tier)}. Available tiers: ${join(", ", keys(var.tiers))}. The internal tier exists only while internal_tier_enabled is on in this environment's terraform.tfvars."
     }
 
     precondition {

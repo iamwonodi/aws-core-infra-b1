@@ -502,3 +502,9 @@ variable "db_data_volume_mount_path" {
   default     = ""
 }
 
+
+variable "internal_tier_enabled" {
+  type        = bool
+  default     = false
+  description = "Run the internal tier: its load balancer (about $21 a month) and its shared fleet. Off until an internal-tier service needs it; while off, the contract offers no internal tier and a service asking for it fails its plan."
+}

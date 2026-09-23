@@ -31,3 +31,7 @@ isolated_summary_cidr = "10.30.48.0/20"
 # cluster. Any of "postgres", "mysql" (RDS) and "mongodb" (DocumentDB). Empty
 # runs none, and costs nothing.
 database_engines = []
+
+# The internal tier (its load balancer): off until an internal-tier
+# service needs it, to save its cost.
+internal_tier_enabled = false

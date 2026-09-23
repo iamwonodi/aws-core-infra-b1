@@ -133,3 +133,9 @@ variable "assets_noncurrent_version_expiration_days" {
     error_message = "assets_noncurrent_version_expiration_days must be at least 1."
   }
 }
+
+variable "internal_tier_enabled" {
+  type        = bool
+  default     = false
+  description = "Create the internal-tier load balancer (with its security group and the private DNS wildcard pointing at it). Off until an internal-tier service needs it."
+}

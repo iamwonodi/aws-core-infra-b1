@@ -37,18 +37,23 @@ module "service_roles" {
   # Services run on the shared tier fleets here, so no IAM is granted to them.
   hosting_model = "shared"
 
-  tiers = {
-    private = {
-      listener_arn      = nonsensitive(module.edge.private_alb_https_listener_arn)
-      asg_arn           = module.compute.private_asg_arn
-      security_group_id = module.network.private_security_group_id
-    }
-    internal = {
-      listener_arn      = nonsensitive(module.edge.internal_alb_https_listener_arn)
-      asg_arn           = module.compute.internal_asg_arn
-      security_group_id = module.network.internal_security_group_id
-    }
-  }
+  # The internal tier exists only while internal_tier_enabled is on.
+  tiers = merge(
+    {
+      private = {
+        listener_arn      = nonsensitive(module.edge.private_alb_https_listener_arn)
+        asg_arn           = module.compute.private_asg_arn
+        security_group_id = module.network.private_security_group_id
+      }
+    },
+    var.internal_tier_enabled ? {
+      internal = {
+        listener_arn      = nonsensitive(module.edge.internal_alb_https_listener_arn)
+        asg_arn           = module.compute.internal_asg_arn
+        security_group_id = module.network.internal_security_group_id
+      }
+    } : {},
+  )
 
   deploy_bucket_name         = module.compute.deploy_bucket_name
   assets_bucket_name         = module.edge.assets_bucket_id
@@ -179,6 +184,9 @@ module "network" {
 module "compute" {
   source = "../../modules/compute"
 
+  # Off: the internal fleet is kept at zero instances.
+  internal_fleet_enabled = var.internal_tier_enabled
+
   project_name = var.project_name
   environment  = local.environment
 
@@ -225,6 +233,10 @@ module "compute" {
 
 module "edge" {
   source = "../../modules/edge"
+
+  # Off: no internal-tier load balancer, and no private DNS wildcard pointing at
+  # one. Turn it on when the first internal-tier service arrives.
+  internal_tier_enabled = var.internal_tier_enabled
 
   project_name = var.project_name
   environment  = local.environment
@@ -311,20 +323,25 @@ module "platform_contract" {
   database_provision_document_name = module.database.provision_document_name
   database_update_document_name    = module.database.update_document_name
 
-  tiers = {
-    private = {
-      security_group_id     = module.network.private_security_group_id
-      alb_security_group_id = module.edge.private_alb_security_group_id
-      asg_name              = module.compute.private_asg_name
-      listener_arn          = nonsensitive(module.edge.private_alb_https_listener_arn)
-    }
-    internal = {
-      security_group_id     = module.network.internal_security_group_id
-      alb_security_group_id = module.edge.internal_alb_security_group_id
-      asg_name              = module.compute.internal_asg_name
-      listener_arn          = nonsensitive(module.edge.internal_alb_https_listener_arn)
-    }
-  }
+  # The internal tier exists only while internal_tier_enabled is on.
+  tiers = merge(
+    {
+      private = {
+        security_group_id     = module.network.private_security_group_id
+        alb_security_group_id = module.edge.private_alb_security_group_id
+        asg_name              = module.compute.private_asg_name
+        listener_arn          = nonsensitive(module.edge.private_alb_https_listener_arn)
+      }
+    },
+    var.internal_tier_enabled ? {
+      internal = {
+        security_group_id     = module.network.internal_security_group_id
+        alb_security_group_id = module.edge.internal_alb_security_group_id
+        asg_name              = module.compute.internal_asg_name
+        listener_arn          = nonsensitive(module.edge.internal_alb_https_listener_arn)
+      }
+    } : {},
+  )
 }
 
 resource "aws_ssm_parameter" "platform_config" {

@@ -46,3 +46,7 @@ database_working_hours = {
   stop     = "19:00"
   timezone = "Africa/Lagos"
 }
+
+# The internal tier (its load balancer): off until an internal-tier
+# service needs it, to save its cost.
+internal_tier_enabled = false

@@ -379,3 +379,9 @@ variable "database_service_name" {
     error_message = "database_service_name must not be empty."
   }
 }
+
+variable "internal_fleet_enabled" {
+  type        = bool
+  default     = true
+  description = "Run the internal-tier fleet. False holds it at zero instances (the group itself remains, costing nothing) until an internal-tier service needs it."
+}

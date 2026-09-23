@@ -296,9 +296,11 @@ module "internal_autoscaling_group" {
 
   subnet_ids = var.internal_subnet_ids
 
-  min_size         = var.internal_fleet_min_size
-  desired_capacity = var.internal_fleet_desired_capacity
-  max_size         = var.internal_fleet_max_size
+  # Held at zero while the internal tier is off: the group, its template and its
+  # permissions stay, so turning the tier on only changes these three numbers.
+  min_size         = var.internal_fleet_enabled ? var.internal_fleet_min_size : 0
+  desired_capacity = var.internal_fleet_enabled ? var.internal_fleet_desired_capacity : 0
+  max_size         = var.internal_fleet_enabled ? var.internal_fleet_max_size : 0
 
   # Shared group: see the note on the private fleet above.
 }

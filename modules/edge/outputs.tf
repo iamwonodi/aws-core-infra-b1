@@ -30,8 +30,8 @@ output "private_alb_https_listener_arn" {
 }
 
 output "internal_alb_https_listener_arn" {
-  description = "ARN of the internal-tier ALB's HTTPS listener (port 443)."
-  value       = module.internal_alb.https_listener_arn
+  description = "ARN of the internal-tier ALB's HTTPS listener (port 443). Null while internal_tier_enabled is off."
+  value       = try(module.internal_alb[0].https_listener_arn, null)
   sensitive   = true
 }
 
@@ -41,6 +41,6 @@ output "private_alb_security_group_id" {
 }
 
 output "internal_alb_security_group_id" {
-  description = "Security group of the internal-tier ALB. A service allows this group to reach its service port."
-  value       = module.internal_alb_sg.security_group_id
+  description = "Security group of the internal-tier ALB. A service allows this group to reach its service port. Null while internal_tier_enabled is off."
+  value       = try(module.internal_alb_sg[0].security_group_id, null)
 }

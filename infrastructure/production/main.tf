@@ -72,14 +72,19 @@ module "service_roles" {
   # instances, through their provisioning functions and nothing else.
   database_provision_function_arns = [for engine in sort(tolist(local.provisioned_engines)) : module.database_provisioning[engine].function_arn]
 
-  tiers = {
-    private = {
-      listener_arn = nonsensitive(module.edge.private_alb_https_listener_arn)
-    }
-    internal = {
-      listener_arn = nonsensitive(module.edge.internal_alb_https_listener_arn)
-    }
-  }
+  # The internal tier exists only while internal_tier_enabled is on.
+  tiers = merge(
+    {
+      private = {
+        listener_arn = nonsensitive(module.edge.private_alb_https_listener_arn)
+      }
+    },
+    var.internal_tier_enabled ? {
+      internal = {
+        listener_arn = nonsensitive(module.edge.internal_alb_https_listener_arn)
+      }
+    } : {},
+  )
 
   assets_bucket_name = module.edge.assets_bucket_id
   state_bucket_name  = local.state_bucket_name
@@ -187,6 +192,10 @@ module "network" {
 
 module "edge" {
   source = "../../modules/edge"
+
+  # Off: no internal-tier load balancer, and no private DNS wildcard pointing at
+  # one. Turn it on when the first internal-tier service arrives.
+  internal_tier_enabled = var.internal_tier_enabled
 
   project_name = var.project_name
   environment  = local.environment
@@ -482,20 +491,25 @@ module "platform_contract" {
   assets_bucket_name         = module.edge.assets_bucket_id
   isolated_security_group_id = module.network.isolated_security_group_id
 
-  tiers = {
-    # Services here create their own hosts, so the contract tells them where the
-    # tier's subnets are rather than making every service repository hard-code them.
-    private = {
-      listener_arn          = nonsensitive(module.edge.private_alb_https_listener_arn)
-      alb_security_group_id = module.edge.private_alb_security_group_id
-      subnet_ids            = module.network.private_subnet_ids
-    }
-    internal = {
-      listener_arn          = nonsensitive(module.edge.internal_alb_https_listener_arn)
-      alb_security_group_id = module.edge.internal_alb_security_group_id
-      subnet_ids            = module.network.internal_subnet_ids
-    }
-  }
+  # The internal tier exists only while internal_tier_enabled is on.
+  tiers = merge(
+    {
+      # Services here create their own hosts, so the contract tells them where the
+      # tier's subnets are rather than making every service repository hard-code them.
+      private = {
+        listener_arn          = nonsensitive(module.edge.private_alb_https_listener_arn)
+        alb_security_group_id = module.edge.private_alb_security_group_id
+        subnet_ids            = module.network.private_subnet_ids
+      }
+    },
+    var.internal_tier_enabled ? {
+      internal = {
+        listener_arn          = nonsensitive(module.edge.internal_alb_https_listener_arn)
+        alb_security_group_id = module.edge.internal_alb_security_group_id
+        subnet_ids            = module.network.internal_subnet_ids
+      }
+    } : {},
+  )
 }
 
 resource "aws_ssm_parameter" "platform_config" {

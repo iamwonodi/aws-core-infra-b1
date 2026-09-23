@@ -209,10 +209,14 @@ module "private_alb" {
 #
 # Reached only from the private tier's own backend API -- never from
 # CloudFront or the internet directly.
+#
+# Created only while internal_tier_enabled is on: a load balancer is billed
+# every hour, whether or not a service sits behind it.
 ########################################################################################
 
 module "internal_alb_sg" {
   source = "git::https://github.com/iamwonodi/terraform-aws-security-group.git?ref=v1.0.0"
+  count  = var.internal_tier_enabled ? 1 : 0
 
   project_name = var.project_name
   environment  = var.environment
@@ -224,8 +228,9 @@ module "internal_alb_sg" {
 # PRIVATE -> INTERNAL ALB firewall configuration.
 module "internal_alb_sg_ingress_rule" {
   source = "git::https://github.com/iamwonodi/terraform-aws-sg-ingress-rule.git?ref=v1.2.0"
+  count  = var.internal_tier_enabled ? 1 : 0
 
-  security_group_id            = module.internal_alb_sg.security_group_id
+  security_group_id            = module.internal_alb_sg[0].security_group_id
   description                  = "Allow HTTPS from private application workloads"
   ip_protocol                  = "tcp"
   from_port                    = 443
@@ -235,13 +240,14 @@ module "internal_alb_sg_ingress_rule" {
 
 module "internal_alb" {
   source = "git::https://github.com/iamwonodi/terraform-aws-load-balancer.git?ref=v1.0.0"
+  count  = var.internal_tier_enabled ? 1 : 0
 
   project_name = "${var.project_name}-${local.internal_alb_name}"
   environment  = var.environment
   internal     = true
 
   subnet_ids            = var.internal_subnet_ids
-  alb_security_group_id = module.internal_alb_sg.security_group_id
+  alb_security_group_id = module.internal_alb_sg[0].security_group_id
   acm_certificate_arn   = module.acm.certificate_arns["default"]
 
   default_target_group_arn = null
@@ -342,8 +348,11 @@ module "route53_public_records" {
   }
 }
 
+# The private wildcard points at the internal-tier load balancer, so it exists
+# only with it.
 module "route53_private_records" {
   source = "git::https://github.com/iamwonodi/terraform-aws-route53-record.git?ref=v1.0.0"
+  count  = var.internal_tier_enabled ? 1 : 0
 
   records = {
     wildcard = {
@@ -352,8 +361,8 @@ module "route53_private_records" {
       type    = "A"
 
       alias = {
-        name                   = module.internal_alb.alb_dns_name
-        zone_id                = module.internal_alb.alb_zone_id
+        name                   = module.internal_alb[0].alb_dns_name
+        zone_id                = module.internal_alb[0].alb_zone_id
         evaluate_target_health = true
       }
     }
