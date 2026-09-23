@@ -265,3 +265,9 @@ variable "internal_tier_enabled" {
   default     = false
   description = "Run the internal tier: its load balancer (about $21 a month). Off until an internal-tier service needs it; while off, the contract offers no internal tier and a service asking for it fails its plan."
 }
+
+variable "nat_type" {
+  type        = string
+  default     = "instance"
+  description = "How private and internal hosts reach the internet: \"gateway\" (managed NAT Gateway) or \"instance\" (a NAT instance: far cheaper, but outbound traffic stops while it is recovered or replaced)."
+}

@@ -22,7 +22,7 @@ This tiering is the backbone of the whole project's security model: a request fr
 ## What this module creates
 
 * **The VPC, Internet Gateway and its subnets** (`vpc_base`) -- one subnet per tier, per Availability Zone.
-* **A NAT Gateway** (`nat_gateway`) -- gives private/internal/vpc-endpoint resources outbound internet access without exposing them directly. The isolated tier has no route through it at all.
+* **A NAT** -- gives private and internal hosts outbound internet access without exposing them. `nat_type = "gateway"` creates a managed NAT Gateway; `"instance"` a small NAT instance (`terraform-aws-nat-instance`), far cheaper but with outbound traffic stopped while it is recovered or replaced. The isolated tier has no route through either.
 * **Route tables** (`route_tables`) -- wires each tier to the right target: public to the Internet Gateway, private/internal/vpc-endpoint through NAT, isolated with no default route out.
 * **Network ACLs** (`nacl_security`, called internally as `../nacl-security`) -- subnet-level, stateless firewalling as a second layer of defense on top of the security groups below.
 * **One security group per tier**, plus one for VPC endpoints -- each starts with no ingress rules of its own. Ingress is added by whichever domain module actually needs to open a specific port (for example, the `edge` module's ALB ingress rules), so "what's allowed in" is defined next to whatever resource actually needs it, not centralized here.

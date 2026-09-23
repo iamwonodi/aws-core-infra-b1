@@ -165,3 +165,14 @@ variable "isolated_interface_endpoints" {
     error_message = "isolated_interface_endpoints lists a service more than once."
   }
 }
+
+variable "nat_type" {
+  type        = string
+  default     = "gateway"
+  description = "How private and internal hosts reach the internet. \"gateway\": a managed NAT Gateway (about $0.045 an hour plus $0.045 per GB in us-east-1, more elsewhere). \"instance\": one small NAT instance (a few dollars a month, no per-GB charge), whose traffic stops for the minutes it is recovered or replaced."
+
+  validation {
+    condition     = contains(["gateway", "instance"], var.nat_type)
+    error_message = "nat_type must be \"gateway\" or \"instance\"."
+  }
+}

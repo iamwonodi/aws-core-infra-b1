@@ -172,6 +172,8 @@ module "network" {
   private_summary_cidr  = var.private_summary_cidr
   internal_summary_cidr = var.internal_summary_cidr
   isolated_summary_cidr = var.isolated_summary_cidr
+
+  nat_type = var.nat_type
 }
 
 ################################################################################

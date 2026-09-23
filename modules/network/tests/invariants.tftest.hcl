@@ -140,3 +140,21 @@ run "an_interface_endpoint_that_is_not_a_service_name_is_rejected" {
 
   expect_failures = [var.isolated_interface_endpoints]
 }
+
+run "a_nat_instance_is_valid" {
+  command = plan
+
+  variables {
+    nat_type = "instance"
+  }
+}
+
+run "an_unknown_nat_type_is_rejected" {
+  command = plan
+
+  variables {
+    nat_type = "none"
+  }
+
+  expect_failures = [var.nat_type]
+}

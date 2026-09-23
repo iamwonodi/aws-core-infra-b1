@@ -171,6 +171,8 @@ module "network" {
   internal_summary_cidr = var.internal_summary_cidr
   isolated_summary_cidr = var.isolated_summary_cidr
 
+  nat_type = var.nat_type
+
   # The isolated tier here holds only managed databases and their provisioning
   # functions, which need Secrets Manager and nothing else. The services' own
   # hosts reach every other AWS API through the NAT. Each endpoint left out saves

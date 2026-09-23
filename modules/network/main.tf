@@ -31,12 +31,30 @@ module "vpc_base" {
 
 module "nat_gateway" {
   source = "git::https://github.com/iamwonodi/terraform-aws-nat-gateway.git?ref=v1.0.0"
+  count  = var.nat_type == "gateway" ? 1 : 0
 
   project_name = var.project_name
   environment  = var.environment
 
   nat_gateway_strategy = "single"
   public_subnet_ids    = module.vpc_base.public_subnet_ids
+}
+
+# The cheaper alternative: one small instance with no per-GB processing charge.
+# While it is recovered or replaced, private and internal hosts have no
+# outbound internet access; the isolated tier never had any.
+module "nat_instance" {
+  source = "git::https://github.com/iamwonodi/terraform-aws-nat-instance.git?ref=v1.0.0"
+  count  = var.nat_type == "instance" ? 1 : 0
+
+  project_name = var.project_name
+  environment  = var.environment
+
+  vpc_id    = module.vpc_base.vpc_id
+  subnet_id = module.vpc_base.public_subnet_ids[0]
+
+  # Only the tiers that route through it.
+  allowed_cidr_blocks = [var.private_summary_cidr, var.internal_summary_cidr]
 }
 
 ################################################################################
@@ -50,7 +68,7 @@ module "nat_gateway" {
 ################################################################################
 
 module "route_tables" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-routing.git?ref=v1.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-routing.git?ref=v1.1.0"
 
   project_name = var.project_name
   environment  = var.environment
@@ -63,8 +81,10 @@ module "route_tables" {
   internal_subnet_ids = module.vpc_base.internal_subnet_ids
   isolated_subnet_ids = module.vpc_base.isolated_subnet_ids
 
-  nat_gateway_ids      = module.nat_gateway.nat_gateway_ids
-  nat_gateway_strategy = module.nat_gateway.nat_gateway_strategy
+  # Exactly one of these is set, following nat_type.
+  nat_gateway_ids          = try(module.nat_gateway[0].nat_gateway_ids, [])
+  nat_gateway_strategy     = try(module.nat_gateway[0].nat_gateway_strategy, "single")
+  nat_network_interface_id = try(module.nat_instance[0].network_interface_id, null)
 }
 
 ################################################################################

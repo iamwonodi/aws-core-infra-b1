@@ -50,3 +50,8 @@ database_working_hours = {
 # The internal tier (its load balancer): off until an internal-tier
 # service needs it, to save its cost.
 internal_tier_enabled = false
+
+# How private and internal hosts reach the internet: "gateway" (managed NAT
+# Gateway) or "instance" (a small NAT instance, far cheaper, but outbound traffic
+# stops for the minutes it is recovered or replaced).
+nat_type = "instance"
