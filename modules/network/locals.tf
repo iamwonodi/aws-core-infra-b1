@@ -18,4 +18,11 @@ locals {
 
   # The required public entry points for the load balancer.
   endpoint_ingress_ports = [443]
+
+  # Every tier whose hosts call AWS services. The public tier runs none.
+  endpoint_client_security_groups = {
+    private  = module.private_sg.security_group_id
+    internal = module.internal_sg.security_group_id
+    isolated = module.isolated_sg.security_group_id
+  }
 }

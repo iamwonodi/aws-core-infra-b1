@@ -104,3 +104,39 @@ run "overlapping_summaries_are_rejected" {
 
   expect_failures = [terraform_data.network_invariants]
 }
+
+run "a_single_interface_endpoint_is_valid" {
+  command = plan
+
+  variables {
+    isolated_interface_endpoints = ["secretsmanager"]
+  }
+}
+
+run "no_interface_endpoints_is_valid" {
+  command = plan
+
+  variables {
+    isolated_interface_endpoints = []
+  }
+}
+
+run "a_repeated_interface_endpoint_is_rejected" {
+  command = plan
+
+  variables {
+    isolated_interface_endpoints = ["ssm", "ssm"]
+  }
+
+  expect_failures = [var.isolated_interface_endpoints]
+}
+
+run "an_interface_endpoint_that_is_not_a_service_name_is_rejected" {
+  command = plan
+
+  variables {
+    isolated_interface_endpoints = ["com.amazonaws.af-south-1.ssm "]
+  }
+
+  expect_failures = [var.isolated_interface_endpoints]
+}

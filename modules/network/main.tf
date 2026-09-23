@@ -183,11 +183,19 @@ module "global_outbound_routing" {
 }
 
 ################################################################################
-# VPC ENDPOINTS FOR THE ISOLATED TIER
+# VPC ENDPOINTS
 #
-# Lets isolated-tier resources (the database) reach AWS services --
-# S3, ECR, SSM, Secrets Manager, KMS -- privately, entirely within the
-# VPC, without ever needing a route through the NAT gateway.
+# Lets isolated-tier resources reach AWS services privately, entirely within the
+# VPC, without a route through the NAT gateway.
+#
+# The interface endpoints live in the isolated subnets but serve the WHOLE VPC:
+# private DNS makes every host's call to one of these services resolve to its
+# endpoint. So the endpoints must admit every tier that runs hosts, not only the
+# isolated one -- otherwise a private or internal host's SSM, ECR, Secrets
+# Manager or Logs call is sent to an endpoint that refuses it, and hangs.
+#
+# Which interface endpoints exist is the environment's choice (each is billed
+# per hour): isolated_interface_endpoints.
 ################################################################################
 
 module "endpoint_ingress_rule" {
@@ -197,14 +205,17 @@ module "endpoint_ingress_rule" {
   # is a list of numbers (locals.tf), so each value is converted to a string
   # here and back to a number below for from_port/to_port, which the
   # sg-ingress-rule module expects as numbers.
-  for_each = toset([for port in local.endpoint_ingress_ports : tostring(port)])
+  for_each = {
+    for pair in setproduct(keys(local.endpoint_client_security_groups), local.endpoint_ingress_ports) :
+    "${pair[0]}-${pair[1]}" => { tier = pair[0], port = pair[1] }
+  }
 
   security_group_id            = module.vpc_endpoint_sg.security_group_id
-  description                  = "Allow isolated workloads to access VPC endpoints on port: ${each.value}"
+  description                  = "Allow ${each.value.tier} workloads to access VPC endpoints on port: ${each.value.port}"
   ip_protocol                  = "tcp"
-  from_port                    = tonumber(each.value)
-  to_port                      = tonumber(each.value)
-  referenced_security_group_id = module.isolated_sg.security_group_id # Open safely to the isolated subnet
+  from_port                    = each.value.port
+  to_port                      = each.value.port
+  referenced_security_group_id = local.endpoint_client_security_groups[each.value.tier]
 }
 
 module "isolated_vpc_endpoints" {
@@ -232,14 +243,5 @@ module "isolated_vpc_endpoints" {
     s3 = {}
   }
 
-  interface_endpoints = {
-    "ecr.api"      = {} # Pull container image manifests
-    "ecr.dkr"      = {} # Pull container image layers
-    ssm            = {} # Systems Manager (Session Manager access, no SSH/bastion needed)
-    ssmmessages    = {} # Systems Manager Agent communication channel
-    ec2messages    = {} # EC2 instance communication channel used by SSM
-    secretsmanager = {} # Fetch secrets (e.g. database credentials) at boot
-    kms            = {} # Decrypt secrets and EBS volumes
-    logs           = {} # CloudWatch Logs: without it anything running in this tier writes no logs at all
-  }
+  interface_endpoints = { for service in var.isolated_interface_endpoints : service => {} }
 }

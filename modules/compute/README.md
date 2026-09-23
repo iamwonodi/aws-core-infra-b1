@@ -176,13 +176,13 @@ There is no external `user_data` input anymore -- this module renders its own bo
 Each fleet's `min_size` / `desired_capacity` / `max_size` are independently configurable:
 
 ```hcl
-private_fleet_min_size         = 2  # default
-private_fleet_desired_capacity = 4  # default
-private_fleet_max_size         = 6  # default
+private_fleet_min_size         = 1  # default
+private_fleet_desired_capacity = 1  # default
+private_fleet_max_size         = 2  # default
 
-internal_fleet_min_size         = 2  # default
-internal_fleet_desired_capacity = 4  # default
-internal_fleet_max_size         = 6  # default
+internal_fleet_min_size         = 1  # default
+internal_fleet_desired_capacity = 1  # default
+internal_fleet_max_size         = 2  # default
 ```
 
 Both fleets default to identical values, but there's no requirement they stay that way -- if internal-tier services genuinely need different scaling behavior than the user-facing tier, only that fleet's three variables need to change.

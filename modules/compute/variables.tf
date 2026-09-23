@@ -302,7 +302,7 @@ variable "deploy_bucket_force_destroy" {
 variable "private_fleet_min_size" {
   type        = number
   description = "Minimum instance count for the private-tier fleet."
-  default     = 2
+  default     = 1
 
   validation {
     condition     = var.private_fleet_min_size >= 0
@@ -313,7 +313,7 @@ variable "private_fleet_min_size" {
 variable "private_fleet_desired_capacity" {
   type        = number
   description = "Desired instance count for the private-tier fleet."
-  default     = 4
+  default     = 1
 
   validation {
     condition     = var.private_fleet_desired_capacity >= 0
@@ -324,7 +324,7 @@ variable "private_fleet_desired_capacity" {
 variable "private_fleet_max_size" {
   type        = number
   description = "Maximum instance count for the private-tier fleet."
-  default     = 6
+  default     = 2
 
   validation {
     condition     = var.private_fleet_max_size >= 0
@@ -339,7 +339,7 @@ variable "private_fleet_max_size" {
 variable "internal_fleet_min_size" {
   type        = number
   description = "Minimum instance count for the internal-tier fleet."
-  default     = 2
+  default     = 1
 
   validation {
     condition     = var.internal_fleet_min_size >= 0
@@ -350,7 +350,7 @@ variable "internal_fleet_min_size" {
 variable "internal_fleet_desired_capacity" {
   type        = number
   description = "Desired instance count for the internal-tier fleet."
-  default     = 4
+  default     = 1
 
   validation {
     condition     = var.internal_fleet_desired_capacity >= 0
@@ -361,7 +361,7 @@ variable "internal_fleet_desired_capacity" {
 variable "internal_fleet_max_size" {
   type        = number
   description = "Maximum instance count for the internal-tier fleet."
-  default     = 6
+  default     = 2
 
   validation {
     condition     = var.internal_fleet_max_size >= 0

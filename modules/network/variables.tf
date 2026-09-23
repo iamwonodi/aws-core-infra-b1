@@ -140,3 +140,28 @@ variable "isolated_summary_cidr" {
     error_message = "isolated_summary_cidr must be a valid IPv4 CIDR block."
   }
 }
+
+variable "isolated_interface_endpoints" {
+  type = list(string)
+  default = [
+    "ecr.api",        # pull container image manifests
+    "ecr.dkr",        # pull container image layers
+    "ssm",            # Systems Manager (Session Manager, Run Command)
+    "ssmmessages",    # the SSM agent's channel
+    "ec2messages",    # the EC2 side of SSM
+    "secretsmanager", # secrets, including the database credentials
+    "kms",            # decrypting with customer-managed keys
+    "logs",           # CloudWatch Logs
+  ]
+  description = "Interface endpoints to create, by service name. Each is billed per hour; a service without one is reached through the NAT instead (billed per GB), and from the isolated tier, which has no NAT route, not at all. S3 is always a gateway endpoint, which is free."
+
+  validation {
+    condition     = alltrue([for service in var.isolated_interface_endpoints : can(regex("^[a-z0-9.-]+$", service))])
+    error_message = "isolated_interface_endpoints must be AWS service names such as secretsmanager or ecr.api."
+  }
+
+  validation {
+    condition     = length(distinct(var.isolated_interface_endpoints)) == length(var.isolated_interface_endpoints)
+    error_message = "isolated_interface_endpoints lists a service more than once."
+  }
+}
