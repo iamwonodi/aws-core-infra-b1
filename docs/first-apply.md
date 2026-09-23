@@ -11,6 +11,8 @@ Each environment is a separate AWS account, so steps 3 and 4 are repeated per en
 | `gh` CLI, authenticated (`gh auth login`) | GitHub Environments and secrets |
 | `jq`, `git`, `bash` (Git Bash on Windows) | the scripts |
 
+**The RDS certificate bundle** must be committed at `modules/database/provisioning/lambda/certificates/rds-global-bundle.pem` (download command in the README beside it). The blueprint ships without it, since it must come from AWS itself; staging's and production's plans stop, and CI fails, until it is there. Committing it once in the blueprint gives it to every copy.
+
 The repository must exist on GitHub with an `origin` remote. GitHub Environment protection rules (required reviewers, branch policies) work on public repositories and on private ones with a GitHub Team or Enterprise plan.
 
 ## 1. Set the project's values

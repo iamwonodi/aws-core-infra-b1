@@ -14,8 +14,10 @@ privilege on *.*, with GRANT OPTION, but not SUPER):
     PROVISION_TEST_MYSQL_ROOT_USER=root
     PROVISION_TEST_MYSQL_ROOT_PASSWORD=...
 
-The connection is made over TLS, as the function makes it, so the server must
-have TLS enabled (MySQL 8 does by default).
+The connection is made as the function makes it: over TLS, verified. So set
+PROVISION_TEST_TLS_CA to the certificate authority that signed the server's
+certificate, and PROVISION_TEST_MYSQL_HOST to the name that certificate is for
+(localhost, not 127.0.0.1).
 """
 import importlib
 import os
@@ -33,13 +35,14 @@ if "boto3" not in sys.modules:
     sys.modules["boto3"] = stub
 
 HOST = os.environ.get("PROVISION_TEST_MYSQL_HOST")
+CA = os.environ.get("PROVISION_TEST_TLS_CA")
 
 
-@unittest.skipUnless(HOST, "set PROVISION_TEST_MYSQL_HOST to run the provisioning SQL against a real MySQL")
+@unittest.skipUnless(HOST and CA, "set PROVISION_TEST_MYSQL_HOST and PROVISION_TEST_TLS_CA to run the provisioning SQL against a real MySQL")
 class RealMySQL(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        os.environ.update(DATABASE_HOST="x", DATABASE_PORT="3306", ADMIN_SECRET_ARN="x", SERVICE_SECRET_PATTERN="x", ENGINE="mysql")
+        os.environ.update(DATABASE_HOST="x", DATABASE_PORT="3306", ADMIN_SECRET_ARN="x", SERVICE_SECRET_PATTERN="x", ENGINE="mysql", CA_BUNDLE=CA)
         cls.prov = importlib.reload(importlib.import_module("provision"))
         cls.port = int(os.environ.get("PROVISION_TEST_MYSQL_PORT", "3306"))
         cls.suffix = uuid.uuid4().hex[:6]

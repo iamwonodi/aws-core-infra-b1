@@ -43,6 +43,47 @@ import pymongo  # noqa: E402
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+# ------------------------------------------------------------------------------
+# TLS
+# ------------------------------------------------------------------------------
+# Every connection is encrypted AND verified: the server must present a
+# certificate signed by an Amazon RDS certificate authority, for the host name
+# connected to. Without verification, anything able to impersonate the database
+# inside the VPC would be handed the administrator's password.
+#
+# RDS and DocumentDB sign with the same authorities, published by AWS as one
+# bundle, committed next to this file (certificates/README.md). CA_BUNDLE
+# overrides its location, which the tests use.
+# ------------------------------------------------------------------------------
+
+DEFAULT_CA_BUNDLE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "certificates", "rds-global-bundle.pem")
+
+
+def ca_bundle():
+    """The certificate bundle to verify against; refuses to go on without one."""
+    path = os.environ.get("CA_BUNDLE") or DEFAULT_CA_BUNDLE
+
+    if not os.path.isfile(path):
+        raise ProvisioningError(
+            f"no certificate bundle at {path}: the database's certificate cannot be verified, "
+            "so no connection is attempted. See certificates/README.md."
+        )
+
+    return path
+
+
+def tls_context():
+    """A context that verifies the certificate chain and the host name."""
+    try:
+        context = ssl.create_default_context(cafile=ca_bundle())
+    except ssl.SSLError as error:
+        raise ProvisioningError(f"the certificate bundle could not be loaded: {error}") from error
+
+    # create_default_context already does both; stated so a reader need not know.
+    context.check_hostname = True
+    context.verify_mode = ssl.CERT_REQUIRED
+    return context
+
 # Core generates service names, database names and users from a service's name, so
 # they are plain identifiers. Anything else is refused rather than quoted: these
 # values are interpolated into SQL that runs as the administrator.
@@ -89,7 +130,7 @@ def connect(host, port, user, password, database):
             user=user,
             password=password,
             database=database,
-            ssl_context=True,  # RDS presents a certificate; the tier is isolated but the traffic is still encrypted
+            ssl_context=tls_context(),
             timeout=15,
         )
     except Exception as error:
@@ -167,12 +208,7 @@ def quote_mysql_identifier(value):
 
 
 def connect_mysql(host, port, user, password, database):
-    # Encrypted, as the PostgreSQL connection is: pg8000's ssl_context=True
-    # encrypts without verifying the certificate, and this does the same. The
-    # RDS certificate authority is not in the runtime's trust store.
-    context = ssl.create_default_context()
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
+    context = tls_context()
 
     try:
         connection = pymysql.connect(
@@ -226,8 +262,8 @@ def provision_mysql(connection, database, user, password):
 
 def connect_mongodb(host, port, user, password):
     # DocumentDB keeps every user in the admin database, so the administrator
-    # authenticates there. TLS is required by the cluster; like the other
-    # engines, the connection is encrypted without verifying the certificate.
+    # authenticates there. TLS is required by the cluster, and verified against
+    # the same bundle as the other engines.
     # DocumentDB does not support retryable writes, and the cluster endpoint is
     # always the writer, so the client talks to it directly.
     try:
@@ -238,7 +274,7 @@ def connect_mongodb(host, port, user, password):
             password=password,
             authSource="admin",
             tls=True,
-            tlsAllowInvalidCertificates=True,
+            tlsCAFile=ca_bundle(),
             retryWrites=False,
             directConnection=True,
             serverSelectionTimeoutMS=15000,

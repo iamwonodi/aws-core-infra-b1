@@ -112,4 +112,14 @@ resource "aws_lambda_function" "this" {
     aws_cloudwatch_log_group.this,
     aws_vpc_security_group_ingress_rule.database,
   ]
+
+  # The function verifies every database's certificate against this bundle and
+  # refuses to connect without it, so a plan without it stops here, before
+  # anything is deployed.
+  lifecycle {
+    precondition {
+      condition     = fileexists("${path.module}/lambda/certificates/rds-global-bundle.pem")
+      error_message = "modules/database/provisioning/lambda/certificates/rds-global-bundle.pem is missing: the provisioning function verifies database certificates against it. Download it from AWS (certificates/README.md) and commit it."
+    }
+  }
 }

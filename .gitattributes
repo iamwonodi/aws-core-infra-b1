@@ -4,3 +4,4 @@
 *.tftpl text eol=lf
 *.py text eol=lf
 *.tf text eol=lf
+*.pem text eol=lf

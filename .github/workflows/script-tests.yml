@@ -61,6 +61,9 @@ jobs:
       - name: Provisioning Lambda Tests
         run: bash modules/database/provisioning/lambda/tests/run.sh
 
+      - name: RDS certificate bundle
+        run: bash scripts/ci/check-ca-bundle.sh
+
       - name: CI Script Tests
         run: bash scripts/ci/tests/run-all.sh
 

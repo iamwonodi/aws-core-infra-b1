@@ -15,7 +15,7 @@ data "archive_file" "provision" {
   source_dir  = "${path.module}/lambda"
   output_path = "${path.module}/.terraform-build/provision.zip"
 
-  excludes = ["tests", "vendor/README.md"]
+  excludes = ["tests", "vendor/README.md", "certificates/README.md"]
 }
 
 # ------------------------------------------------------------------------------
