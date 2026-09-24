@@ -588,3 +588,56 @@ run "a_name_merely_containing_a_reserved_word_is_allowed" {
     error_message = "only names BEGINNING with a reserved prefix are refused, and people's logins reserve none"
   }
 }
+
+run "a_service_declares_its_own_agents_to_the_front_door_and_nothing_else" {
+  command = plan
+
+  variables {
+    front_door_enabled = true
+    entries = {
+      "acme/auth-infra" = { service_name = "auth", kind = "infra", tier = "private", owner_id = "1", repository_id = "2" }
+      "acme/auth-app"   = { service_name = "auth", kind = "app", tier = "private", owner_id = "1", repository_id = "3" }
+    }
+  }
+
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(output.service_roles["acme/auth-infra"].inline_policies["service-infra-access"]).Statement :
+      statement.Sid == "DeclareOwnAgentsToTheFrontDoor" && statement.Resource == "arn:aws:s3:::core-development-deploy/front-door/auth.json"
+    ])
+    error_message = "the infrastructure role may write its own declaration, one object named after the service"
+  }
+
+  assert {
+    condition = alltrue([
+      for statement in jsondecode(output.service_roles["acme/auth-infra"].inline_policies["service-infra-access"]).Statement :
+      !can(regex("front-door/(\\*|[^a]|a[^u])", jsonencode(statement.Resource)))
+    ])
+    error_message = "and no other object in front-door/: not another service's, not a wildcard"
+  }
+
+  assert {
+    condition     = !strcontains(output.service_roles["acme/auth-app"].inline_policies["service-app-access"], "front-door/")
+    error_message = "the app role declares nothing"
+  }
+
+  assert {
+    condition     = !strcontains(output.service_roles["acme/auth-infra"].inline_policies["service-infra-access"], "cognito")
+    error_message = "no service role touches Cognito"
+  }
+}
+
+run "without_a_front_door_nothing_is_declared" {
+  command = plan
+
+  variables {
+    entries = {
+      "acme/auth-infra" = { service_name = "auth", kind = "infra", tier = "private", owner_id = "1", repository_id = "2" }
+    }
+  }
+
+  assert {
+    condition     = !strcontains(output.service_roles["acme/auth-infra"].inline_policies["service-infra-access"], "front-door/")
+    error_message = "production has no front door, so no declaration"
+  }
+}

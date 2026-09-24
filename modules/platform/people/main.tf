@@ -9,14 +9,8 @@
 # provisioning path (the database host in development, the functions on the
 # managed databases).
 #
-# Where the tools have a web address (development and staging), it also creates
-# the front door: a Cognito user pool with one user per person, signed in by
-# email with an authenticator app always required. Nobody can sign themselves
-# up; being on the list is the only way in, and leaving it removes the sign-in.
-#
-# WHAT IT LEAVES TO THE TOOLS REPOSITORY: the app client and its managed login
-# style. They carry the tools' own web addresses, which change with the tools,
-# not with the platform.
+# The list's emails also go to the front door (modules/platform/front-door),
+# which gives each person a sign-in to the team tools' web addresses.
 #
 # TO GIVE SOMEONE A NEW DATABASE PASSWORD: replace their random_password, e.g.
 # terraform apply -replace='module.people.random_password.person["ada"]'.
@@ -86,87 +80,4 @@ resource "aws_secretsmanager_secret_version" "this" {
       access   = person.access
     }
   })
-}
-
-# ------------------------------------------------------------------------------
-# Front door
-# ------------------------------------------------------------------------------
-
-resource "aws_cognito_user_pool" "this" {
-  count = var.front_door ? 1 : 0
-
-  name = "${var.project_name}-${var.environment}-team"
-
-  # Essentials: its managed login walks a new user through setting up their
-  # authenticator app. Free up to 10,000 monthly active users per account (the
-  # Plus tier has no free allowance).
-  user_pool_tier = "ESSENTIALS"
-
-  username_attributes      = ["email"]
-  auto_verified_attributes = ["email"]
-
-  admin_create_user_config {
-    allow_admin_create_user_only = true
-  }
-
-  # An authenticator app, always. No SMS (it costs per message) and no email
-  # codes (the same inbox as a password reset would be one factor, not two).
-  mfa_configuration = "ON"
-
-  software_token_mfa_configuration {
-    enabled = true
-  }
-
-  password_policy {
-    minimum_length                   = 12
-    require_lowercase                = true
-    require_uppercase                = true
-    require_numbers                  = true
-    require_symbols                  = false
-    temporary_password_validity_days = 7
-  }
-
-  account_recovery_setting {
-    recovery_mechanism {
-      name     = "verified_email"
-      priority = 1
-    }
-  }
-
-  # Cognito's own sender: free, no domain to verify, about 50 messages a day,
-  # from no-reply@verificationemail.com. Enough for a team's invitations.
-  email_configuration {
-    email_sending_account = "COGNITO_DEFAULT"
-  }
-
-  deletion_protection = "ACTIVE"
-
-  tags = var.tags
-}
-
-# The sign-in pages. Prefixes are shared by every account in the Region, so the
-# account ID makes this one unique. Version 2 is managed login, which needs a
-# style per app client: the tools repository creates it with its client.
-resource "aws_cognito_user_pool_domain" "this" {
-  count = var.front_door ? 1 : 0
-
-  domain                = "${var.project_name}-${var.environment}-team-${var.account_id}"
-  user_pool_id          = aws_cognito_user_pool.this[0].id
-  managed_login_version = 2
-}
-
-# One sign-in per person. Cognito emails them a temporary password; at their
-# first sign-in they choose their own and set up their authenticator app.
-resource "aws_cognito_user" "person" {
-  for_each = var.front_door ? var.people : {}
-
-  user_pool_id = aws_cognito_user_pool.this[0].id
-  username     = lower(each.value.email)
-
-  attributes = {
-    email          = lower(each.value.email)
-    email_verified = "true"
-  }
-
-  desired_delivery_mediums = ["EMAIL"]
 }

@@ -13,11 +13,7 @@ output "secret_arn" {
   value       = aws_secretsmanager_secret.this.arn
 }
 
-output "front_door" {
-  description = "The Cognito user pool the team tools' web addresses sit behind, and its sign-in domain prefix. Null where there is no front door."
-  value = var.front_door ? {
-    user_pool_id  = aws_cognito_user_pool.this[0].id
-    user_pool_arn = aws_cognito_user_pool.this[0].arn
-    domain        = aws_cognito_user_pool_domain.this[0].domain
-  } : null
+output "emails" {
+  description = "Every person's email, in lower case: the platform list's declaration to the front door."
+  value       = sort([for person in values(var.people) : lower(person.email)])
 }

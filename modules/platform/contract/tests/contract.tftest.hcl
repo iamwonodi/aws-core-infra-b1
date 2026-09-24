@@ -24,9 +24,10 @@ variables {
   }
 
   team_front_door = {
-    user_pool_id  = "af-south-1_AbCdEf123"
-    user_pool_arn = "arn:aws:cognito-idp:af-south-1:123456789012:userpool/af-south-1_AbCdEf123"
-    domain        = "core-development-team-123456789012"
+    user_pool_id       = "af-south-1_AbCdEf123"
+    user_pool_arn      = "arn:aws:cognito-idp:af-south-1:123456789012:userpool/af-south-1_AbCdEf123"
+    domain             = "core-development-team-123456789012"
+    declaration_prefix = "front-door/"
   }
 
   tiers = {
@@ -327,6 +328,11 @@ run "the_tools_learn_their_front_door" {
   assert {
     condition     = jsondecode(output.config_json).team_front_door.user_pool_id == "af-south-1_AbCdEf123" && jsondecode(output.config_json).team_front_door.domain == "core-development-team-123456789012"
     error_message = "the tools repository learns the user pool and sign-in domain its web addresses sit behind"
+  }
+
+  assert {
+    condition     = jsondecode(output.config_json).team_front_door.declaration_prefix == "front-door/"
+    error_message = "a service learns where to declare its agents' emails"
   }
 }
 

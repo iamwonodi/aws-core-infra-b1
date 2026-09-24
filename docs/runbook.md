@@ -162,6 +162,8 @@ Three levels, each traceable to a person except the last:
 
 In production a service's agents are read-only unless listed in `infrastructure/production/data/agent-write-exceptions.json`.
 
+**Signing in to the tools** (development and staging): everyone on the platform list, and every agent a service declares, gets a sign-in automatically, and Cognito emails them an invitation. To see or re-run what the front door did, look at (or invoke) the `<project>-<env>-front-door` function; it changes nothing if any declaration is unreadable, and says which.
+
 ## If it stops
 
 | Symptom | Usually |

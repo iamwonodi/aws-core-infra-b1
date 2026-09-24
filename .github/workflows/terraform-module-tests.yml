@@ -10,7 +10,8 @@ name: Terraform Module Tests
 #   service-boundary  the IAM permissions boundary for roles services create
 #   platform-contract the document services read to learn about the environment
 #   database-engines-role  the platforms team's generated role
-#   people            team members' database logins and front door (mocked AWS)
+#   people            the platform list's database logins (mocked AWS)
+#   front-door        the tools' sign-in and the function behind it (mocked AWS)
 #   network           CIDR invariants (validations.tf, tested in isolation)
 # ==============================================================================
 
@@ -23,6 +24,7 @@ on:
       - "modules/platform/contract/**"
       - "modules/platform/engines-role/**"
       - "modules/platform/people/**"
+      - "modules/platform/front-door/**"
       - "modules/database/schedule/**"
       - "modules/network/variables.tf"
       - "modules/network/validations.tf"
@@ -38,6 +40,7 @@ on:
       - "modules/platform/contract/**"
       - "modules/platform/engines-role/**"
       - "modules/platform/people/**"
+      - "modules/platform/front-door/**"
       - "modules/database/schedule/**"
       - "modules/network/variables.tf"
       - "modules/network/validations.tf"
@@ -94,6 +97,12 @@ jobs:
 
       - name: people
         working-directory: modules/platform/people
+        run: |
+          terraform init -backend=false
+          terraform test
+
+      - name: front-door
+        working-directory: modules/platform/front-door
         run: |
           terraform init -backend=false
           terraform test

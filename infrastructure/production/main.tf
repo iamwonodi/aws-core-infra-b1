@@ -481,14 +481,12 @@ module "people" {
 
   project_name = var.project_name
   environment  = local.environment
-  account_id   = data.aws_caller_identity.current.account_id
 
   people = jsondecode(file("${path.module}/data/people.json"))
 
   # Core's own list is approved by core's production review, so "write" is
   # allowed here; a service's agents need an exception (agent-write-exceptions.json).
-  read_only  = false
-  front_door = false
+  read_only = false
 
   tags = local.common_tags
 }
@@ -543,8 +541,8 @@ module "platform_contract" {
     subnet_ids        = module.network.private_subnet_ids
   }
 
-  # The sign-in the tools' web addresses sit behind. Null in production.
-  team_front_door = module.people.front_door
+  # Production's tools are reached only through a tunnel: no front door.
+  team_front_door = null
 
   # The internal tier exists only while internal_tier_enabled is on.
   tiers = merge(

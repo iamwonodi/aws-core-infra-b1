@@ -15,6 +15,7 @@ on:
       - "modules/**/assets/**"
       - "modules/platform/host-scripts/**"
       - "modules/database/provisioning/**"
+      - "modules/platform/front-door/lambda/**"
       - "scripts/**"
       - "infrastructure/**"
       - ".github/workflows/script-tests.yml"
@@ -25,6 +26,7 @@ on:
       - "modules/**/assets/**"
       - "modules/platform/host-scripts/**"
       - "modules/database/provisioning/**"
+      - "modules/platform/front-door/lambda/**"
       - "scripts/**"
       - "infrastructure/**"
       - ".github/workflows/script-tests.yml"
@@ -52,6 +54,7 @@ jobs:
             modules/database/host/assets/update.sh \
             modules/database/host/assets/provision.sh \
             modules/database/host/assets/provision-service.sh \
+            modules/database/host/assets/provision-people.sh \
             scripts/*.sh \
             scripts/ci/*.sh
 
@@ -60,6 +63,9 @@ jobs:
 
       - name: Provisioning Lambda Tests
         run: bash modules/database/provisioning/lambda/tests/run.sh
+
+      - name: Front Door Function Tests
+        run: bash modules/platform/front-door/lambda/tests/run.sh
 
       - name: RDS certificate bundle
         run: bash scripts/ci/check-ca-bundle.sh

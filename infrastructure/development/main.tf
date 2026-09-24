@@ -55,7 +55,11 @@ module "service_roles" {
     } : {},
   )
 
-  deploy_bucket_name         = module.compute.deploy_bucket_name
+  deploy_bucket_name = module.compute.deploy_bucket_name
+
+  # Each service's infrastructure role may declare its own agents to the front
+  # door (front-door/<service>.json), and no one else's.
+  front_door_enabled         = true
   assets_bucket_name         = module.edge.assets_bucket_id
   state_bucket_name          = local.state_bucket_name
   fleet_update_document_name = module.compute.fleet_update_document_name
@@ -311,12 +315,31 @@ module "people" {
 
   project_name = var.project_name
   environment  = local.environment
-  account_id   = data.aws_caller_identity.current.account_id
 
   people = jsondecode(file("${path.module}/data/people.json"))
 
-  read_only  = false
-  front_door = true
+  read_only = false
+
+  tags = local.common_tags
+}
+
+################################################################################
+# FRONT DOOR
+#
+# The sign-in the team tools' web addresses sit behind. Who is in it: every
+# email declared under front-door/ in the deploy bucket, by a service (its
+# agents) or here (the platform list). See modules/platform/front-door.
+################################################################################
+
+module "front_door" {
+  source = "../../modules/platform/front-door"
+
+  project_name       = var.project_name
+  environment        = local.environment
+  account_id         = data.aws_caller_identity.current.account_id
+  deploy_bucket_name = module.compute.deploy_bucket_name
+
+  platform_emails = module.people.emails
 
   tags = local.common_tags
 }
@@ -360,7 +383,7 @@ module "platform_contract" {
   }
 
   # The sign-in the tools' web addresses sit behind. Null in production.
-  team_front_door = module.people.front_door
+  team_front_door = module.front_door.front_door
 
   # The internal tier exists only while internal_tier_enabled is on.
   tiers = merge(

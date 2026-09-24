@@ -105,6 +105,12 @@ variable "database_provision_function_arns" {
   description = "Lambdas that create a service's database and user on the managed databases, one per engine. A service's infra repository may invoke these functions, and nothing else. Empty in an environment whose database is the EC2 host, or that runs no managed database."
 }
 
+variable "front_door_enabled" {
+  type        = bool
+  default     = false
+  description = "The team tools have a front door here (development, staging). A service's infrastructure role may then write its own declaration, front-door/<service>.json in the deploy bucket, and no other."
+}
+
 variable "database_service_name" {
   type        = string
   default     = "database-hub"

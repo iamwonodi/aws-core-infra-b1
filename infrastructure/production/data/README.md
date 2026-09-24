@@ -48,7 +48,7 @@ A service team's own members are not listed here: each service declares its **ag
 
 **Adding someone:** add their entry and apply. Their database password is generated and kept, with everyone else's on this list, in the secret `<project>-database-people-production-secret-vault` under `platform.<name>`, with their access level. Only administrators read it: open it in the console and hand the person their own password over a private channel. Production has no front door: its tools are reached only through a private tunnel, opened with an AWS sign-in (IAM Identity Center).
 
-**Removing someone:** delete their entry and apply. Their sign-in and their password go at once, and their logins at the end of the apply.
+**Removing someone:** delete their entry and apply. Their password goes at once, and their logins at the end of the apply.
 
 **When the logins change on the databases:** at the end of every apply, the workflow's *Provision People* step creates, updates and removes the `platform.` logins on every engine to match this file; a service provisioned afterwards is covered at once. The **Provision people** workflow runs that step on its own.
 

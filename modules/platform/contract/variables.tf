@@ -134,12 +134,13 @@ variable "tools" {
 
 variable "team_front_door" {
   type = object({
-    user_pool_id  = string
-    user_pool_arn = string
-    domain        = string
+    user_pool_id       = string
+    user_pool_arn      = string
+    domain             = string
+    declaration_prefix = string
   })
   default     = null
-  description = "The Cognito user pool the team tools' web addresses sit behind, and its sign-in domain prefix. The tools repository creates its app client and managed login style on it. Null where the tools have no web address (production)."
+  description = "The Cognito user pool the team tools' web addresses sit behind, its sign-in domain prefix, and where in the deploy bucket services declare their agents' emails (<declaration_prefix><service>.json). The tools repository creates its app client and managed login style on the pool. Null where the tools have no web address (production)."
 }
 
 variable "database_host" {

@@ -9,17 +9,15 @@ mock_provider "random" {}
 variables {
   project_name = "acme"
   environment  = "development"
-  account_id   = "123456789012"
 
   people = {
     ada   = { email = "Ada@Example.org", access = "write" }
     tunde = { email = "tunde@example.org", access = "read" }
   }
 
-  front_door = true
 }
 
-run "each_person_gets_a_platform_login_and_a_sign_in" {
+run "each_person_gets_a_platform_login" {
   command = plan
 
   assert {
@@ -43,46 +41,16 @@ run "each_person_gets_a_platform_login_and_a_sign_in" {
   }
 
   assert {
-    condition     = aws_cognito_user.person["ada"].username == "ada@example.org" && aws_cognito_user.person["ada"].attributes.email_verified == "true"
-    error_message = "a person signs in with their email, stored in lower case"
+    condition     = output.emails == tolist(["ada@example.org", "tunde@example.org"])
+    error_message = "the list's emails, in lower case, for the front door's declaration"
   }
 }
 
-run "the_front_door_requires_an_authenticator_and_an_invitation" {
-  command = plan
-
-  assert {
-    condition     = aws_cognito_user_pool.this[0].user_pool_tier == "ESSENTIALS" && aws_cognito_user_pool.this[0].mfa_configuration == "ON"
-    error_message = "Essentials (its managed login sets up the authenticator), with MFA always on"
-  }
-
-  assert {
-    condition     = aws_cognito_user_pool.this[0].software_token_mfa_configuration[0].enabled && length(aws_cognito_user_pool.this[0].sms_configuration) == 0
-    error_message = "an authenticator app, not SMS"
-  }
-
-  assert {
-    condition     = aws_cognito_user_pool.this[0].admin_create_user_config[0].allow_admin_create_user_only
-    error_message = "nobody signs themselves up: being on the list is the only way in"
-  }
-
-  assert {
-    condition     = aws_cognito_user_pool.this[0].email_configuration[0].email_sending_account == "COGNITO_DEFAULT" && aws_cognito_user_pool.this[0].deletion_protection == "ACTIVE"
-    error_message = "Cognito's own email sender, and the pool cannot be deleted by accident"
-  }
-
-  assert {
-    condition     = aws_cognito_user_pool_domain.this[0].domain == "acme-development-team-123456789012" && aws_cognito_user_pool_domain.this[0].managed_login_version == 2
-    error_message = "a sign-in domain unique to the account, on managed login"
-  }
-}
-
-run "production_has_no_front_door" {
+run "a_read_only_list_refuses_nothing_that_reads" {
   command = plan
 
   variables {
     environment = "production"
-    front_door  = false
     read_only   = true
     people = {
       tunde = { email = "tunde@example.org", access = "read" }
@@ -90,13 +58,8 @@ run "production_has_no_front_door" {
   }
 
   assert {
-    condition     = length(aws_cognito_user_pool.this) == 0 && length(aws_cognito_user.person) == 0 && output.front_door == null
-    error_message = "without a front door there is no user pool and no sign-in"
-  }
-
-  assert {
     condition     = output.usernames == { tunde = "platform.tunde" } && aws_secretsmanager_secret.this.name == "acme-database-people-production-secret-vault"
-    error_message = "people still get a database login and a password"
+    error_message = "a login and a password, named for the environment"
   }
 }
 
@@ -118,8 +81,8 @@ run "nobody_listed_keeps_an_empty_secret" {
   }
 
   assert {
-    condition     = aws_secretsmanager_secret_version.this.secret_string == "{}" && length(aws_cognito_user.person) == 0
-    error_message = "with nobody listed the secret is empty, which tells provisioning to remove every login, and there is no sign-in (the pool itself remains)"
+    condition     = aws_secretsmanager_secret_version.this.secret_string == "{}" && length(output.emails) == 0
+    error_message = "with nobody listed the secret is empty, which tells provisioning to remove every login, and nobody is declared to the front door"
   }
 }
 

@@ -465,6 +465,20 @@ locals {
     ] : []
   }
 
+  # The front door: the service declares its agents' emails in its own file,
+  # and core's function turns every declaration into sign-ins. One object, named
+  # after the service: a service can neither read nor change another's.
+  st_infra_front_door = {
+    for repository, c in local.ctx : repository => var.front_door_enabled && var.deploy_bucket_name != null ? [
+      jsonencode({
+        Sid      = "DeclareOwnAgentsToTheFrontDoor"
+        Effect   = "Allow"
+        Action   = ["s3:DeleteObject", "s3:GetObject", "s3:PutObject"]
+        Resource = "arn:aws:s3:::${local.deploy_bucket}/front-door/${c.service}.json"
+      }),
+    ] : []
+  }
+
   # Managed database: invoke core's provisioning function, and nothing else. The
   # function derives everything from the service name it is given, so invoking it
   # for another service only re-runs that service's own provisioning.
@@ -749,6 +763,7 @@ locals {
         local.st_infra_common[repository],
         local.st_infra_provisioning[repository],
         local.st_infra_managed_provisioning[repository],
+        local.st_infra_front_door[repository],
         local.dedicated ? local.st_infra_dedicated[repository] : local.st_infra_shared[repository],
       )
     )

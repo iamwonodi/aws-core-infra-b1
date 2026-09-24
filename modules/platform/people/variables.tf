@@ -1,16 +1,11 @@
 variable "project_name" {
   type        = string
-  description = "Project name. Part of the secret's and the user pool's names."
+  description = "Project name. Part of the secret's name."
 }
 
 variable "environment" {
   type        = string
-  description = "Environment name. Part of the secret's and the user pool's names."
-}
-
-variable "account_id" {
-  type        = string
-  description = "AWS account ID. Makes the sign-in domain prefix unique, since Cognito prefixes are shared by every account in a Region."
+  description = "Environment name. Part of the secret's name."
 }
 
 variable "people" {
@@ -48,14 +43,8 @@ variable "read_only" {
   description = "Refuse \"write\" for everyone on this list."
 }
 
-variable "front_door" {
-  type        = bool
-  default     = false
-  description = "Create the Cognito sign-in the team tools' web addresses sit behind, with one user per person. Off in production, which is reached only through a private tunnel."
-}
-
 variable "tags" {
   type        = map(string)
   default     = {}
-  description = "Tags applied to the secret and the user pool."
+  description = "Tags applied to the secret."
 }

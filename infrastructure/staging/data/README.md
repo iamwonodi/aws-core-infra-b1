@@ -46,9 +46,9 @@ A service team's own members are not listed here: each service declares its **ag
 | `email` | yes | Their sign-in, and where their invitation goes. Unique |
 | `access` | yes | `read` (look at and query data) or `write` (also add, change and delete rows). Neither can change tables: that is the services' migrations' job |
 
-**Adding someone:** add their entry and apply. Their database password is generated and kept, with everyone else's on this list, in the secret `<project>-database-people-staging-secret-vault` under `platform.<name>`, with their access level. Only administrators read it: open it in the console and hand the person their own password over a private channel. Cognito emails them a temporary password (from `no-reply@verificationemail.com`). At their first sign-in to a tool's web address they choose their own password and set up an authenticator app, which every sign-in then requires.
+**Adding someone:** add their entry and apply. Their database password is generated and kept, with everyone else's on this list, in the secret `<project>-database-people-staging-secret-vault` under `platform.<name>`, with their access level. Only administrators read it: open it in the console and hand the person their own password over a private channel. The front door gives them a sign-in (their email is declared as `front-door/_platform.json`), and Cognito emails them a temporary password (from `no-reply@verificationemail.com`). At their first sign-in to a tool's web address they choose their own password and set up an authenticator app, which every sign-in then requires.
 
-**Removing someone:** delete their entry and apply. Their sign-in and their password go at once, and their logins at the end of the apply.
+**Removing someone:** delete their entry and apply. Their password goes at once, their logins at the end of the apply, and their sign-in as soon as no declaration names their email (a service may still declare them as one of its agents).
 
 **When the logins change on the databases:** at the end of every apply, the workflow's *Provision People* step creates, updates and removes the `platform.` logins on every engine to match this file; a service provisioned afterwards is covered at once. The **Provision people** workflow runs that step on its own.
 
