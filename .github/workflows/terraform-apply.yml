@@ -335,6 +335,21 @@ jobs:
       - name: Publish Role ARNs
         run: bash scripts/ci/publish-role-arns.sh "${{ matrix.environment }}" /tmp/role-arns-new.json
 
+      # ========================================================================
+      # PROVISION PEOPLE
+      #
+      # Brings the team's database logins (agent_<name>, data/people.json) in
+      # line with the people secret this apply may have changed. Runs after
+      # the role ARNs are published, so a failure here cannot hold those back.
+      # A staging database stopped outside its working hours is skipped with a
+      # warning; the "Provision people" workflow runs this step on demand.
+      # ========================================================================
+
+      - name: Provision People
+        run: |
+          terraform -chdir=infrastructure/${{ matrix.environment }} output -json people_provisioning > /tmp/people-provisioning.json
+          bash scripts/ci/provision-people.sh /tmp/people-provisioning.json "${{ vars.AWS_REGION }}"
+
       - name: Summary
         run: |
           echo "Applied plan run ${{ needs.resolve-run.outputs.run_id }} to **${{ matrix.environment }}**." >> "${GITHUB_STEP_SUMMARY}"

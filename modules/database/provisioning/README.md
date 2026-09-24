@@ -27,11 +27,14 @@ This module is platform glue, not a general-purpose building block: it knows cor
 
 ## What the caller may do, and may not
 
-The payload has **one field**:
+The payload is **one of two** things:
 
 ```json
 { "service_name": "auth" }
+{ "action": "people" }
 ```
+
+The second brings the team's logins (`agent_<name>`) on this engine in line with core's people secret; see *People* below.
 
 The function derives the service's secret name from its own pattern, so a caller **cannot** point it at another service's credential, and it runs **no SQL the caller supplies**. Every other field in the payload is ignored.
 
@@ -44,6 +47,20 @@ A service's infrastructure role is granted `lambda:InvokeFunction` on exactly th
 3. Revokes `PUBLIC` from the database and its `public` schema, so another service's user cannot reach it.
 
 It runs on every apply of the service, so every step is conditional.
+
+After a service is provisioned, the people step below runs too, so the team's logins reach the new database at once.
+
+## People
+
+With `people_secret_arn` set, the function reads `{ "agent_<name>": { "password", "access" } }` from that secret and makes the engine match it exactly: every listed person gets a login with that password and, on **every service's database**, `read` (look at and query data) or `write` (also add, change and delete rows). Neither can change tables. An `agent_` login no longer listed is **removed**. Nothing in the payload can add a person or change an access level: only the secret decides.
+
+| Engine | How access is given |
+| --- | --- |
+| PostgreSQL | Groups `agent_group_read` and `agent_group_write`, granted on each service's database (found as a database owned by a role of its own name), with default privileges so tables the service creates later are covered |
+| MySQL | Grants on each service's database (a database with a user of its own name), given to each person, underscores escaped; revoked and granted again on each run, so a change from write to read leaves nothing behind. Direct grants need only the master user's `WITH GRANT OPTION`; granting a role would need `ROLE_ADMIN` |
+| MongoDB (DocumentDB) | `readAnyDatabase` or `readWriteAnyDatabase` on `admin` |
+
+Core's apply invokes `{"action": "people"}` on every engine after applying (`scripts/ci/provision-people.sh`).
 
 ## Things that will bite you
 
@@ -73,6 +90,7 @@ Placing a function in a VPC needs `ec2:CreateNetworkInterface` and its companion
 | `admin_secret_arn` | — | the administrator credential |
 | `admin_database` | `postgres` | connected to before a service's database exists (core uses `platform` on MySQL, `admin` on DocumentDB) |
 | `service_secret_pattern` | `<project>-{service}-<environment>-secret-vault` | how a service's secret is named |
+| `people_secret_arn` | `null` | core's people secret; without it the function provisions services only and refuses `{"action": "people"}` |
 | `vpc_id`, `subnet_ids` | — | the same isolated subnets as the database |
 | `log_retention_days` | `30` | |
 | `timeout_seconds` | `60` | |
@@ -88,4 +106,12 @@ Placing a function in a VPC needs `ec2:CreateNetworkInterface` and its companion
 bash lambda/tests/run.sh
 ```
 
-15 offline tests: which statements the function runs and in which database, that a second run creates nothing but still sets the password, that `PUBLIC` is revoked, and every refusal — a service name that is not one, a missing secret, a missing field, a database name or password that is not a plain value, and a payload trying to name its own target. No AWS and no database are involved, so what is proven is the function's own logic.
+Offline tests (no AWS, no database) prove the function's own logic: which statements it runs and where, that a second run creates nothing but still sets the password, every refusal, the people action, the checks on the people secret, and the DocumentDB people path. `test_real_postgres.py`, `test_real_mysql.py`, `test_real_people.py` and `test_real_tls.py` run the same code against **real** PostgreSQL and MySQL servers when these are set, with an administrator shaped like RDS's (not a superuser):
+
+```bash
+PROVISION_TEST_TLS_CA=/path/ca.pem   # the servers' CA; connections are verified TLS
+PROVISION_TEST_PG_HOST=127.0.0.1     PROVISION_TEST_PG_SUPERUSER=postgres  PROVISION_TEST_PG_SUPERPASSWORD=...
+PROVISION_TEST_MYSQL_HOST=127.0.0.1  PROVISION_TEST_MYSQL_ROOT_USER=root   PROVISION_TEST_MYSQL_ROOT_PASSWORD=...
+```
+
+The people tests connect **as each person** and try: read, write, create a table, reach a database that is not a service's, sign in after removal.

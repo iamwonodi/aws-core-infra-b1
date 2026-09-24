@@ -94,5 +94,8 @@ if args[:1]==['exec']:
     n=len(os.listdir(out))+1
     json.dump({'args':args,'stdin':piped}, open(os.path.join(out,'%03d.json'%n),'w'))
     if os.environ.get('FAKE_EXEC_FAIL'): sys.stderr.write('syntax error\n'); sys.exit(1)
+    # A test may prepare what the Nth exec prints (a query's rows).
+    prepared=os.path.join(root,'exec-out','%03d'%n)
+    if os.path.exists(prepared): sys.stdout.write(open(prepared).read())
     sys.exit(0)
 sys.stderr.write('fake docker: unhandled '+' '.join(args)+'\n'); sys.exit(99)

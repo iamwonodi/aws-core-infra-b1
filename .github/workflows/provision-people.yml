@@ -1,0 +1,66 @@
+name: Provision People
+
+# ==============================================================================
+# Brings the team's database logins (agent_<name>, data/people.json) in line
+# with the people secret, without applying anything. The apply workflow does
+# this after every apply; run this when that step was skipped or failed, for
+# example when staging's databases were stopped outside their working hours.
+#
+# It reads the environment's people_provisioning output and calls what it names:
+# the database host in development, each engine's provisioning function in
+# staging and production. It runs in the environment's GitHub Environment, so
+# the same reviewers approve it as approve an apply there.
+# ==============================================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment whose people to provision"
+        required: true
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: provision-people-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    name: Provision People (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Read Terraform Version
+        run: echo "TF_VERSION=$(tr -d '[:space:]' < .terraform-version)" >> "${GITHUB_ENV}"
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.TF_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform -chdir=infrastructure/${{ inputs.environment }} init -input=false -lockfile=readonly
+
+      - name: Provision People
+        run: |
+          terraform -chdir=infrastructure/${{ inputs.environment }} output -json people_provisioning > /tmp/people-provisioning.json
+          bash scripts/ci/provision-people.sh /tmp/people-provisioning.json "${{ vars.AWS_REGION }}"

@@ -24,6 +24,9 @@ set -euo pipefail
 # every step is conditional and the password is set each time -- which is what
 # makes a rotated secret heal itself on the next apply.
 #
+# AFTERWARDS it runs provision-people.sh on the same engine, so the team's own
+# logins can reach the new database at once.
+#
 # WHAT IT DOES NOT DO: create the secret (the service's infrastructure repository
 # does, and generates the credentials into it), start or deploy an engine
 # (update.sh does), or reach any service other than the one named.
@@ -160,5 +163,10 @@ if [[ "${HAS_EXTRA}" == "true" ]]; then
   echo "Running the service's extra script as its own user."
   bash "${SCRIPT_DIR}/provision.sh" "${CONFIG_FILE}" "${EXTRA_FILE}" service
 fi
+
+# The team's logins (agent_<name>, core's people list) reach the new database
+# straight away, rather than at core's next apply.
+echo "Bringing the team's logins up to date on ${ENGINE}."
+bash "${SCRIPT_DIR}/provision-people.sh" "${ENGINE}"
 
 echo "Provisioned '${SERVICE}'."

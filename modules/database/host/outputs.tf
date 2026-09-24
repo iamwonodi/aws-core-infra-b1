@@ -41,3 +41,8 @@ output "provision_document_name" {
   description = "SSM document that creates one service's database and user. A service's infrastructure repository sends it after publishing its request."
   value       = aws_ssm_document.database_provision.name
 }
+
+output "provision_people_document_name" {
+  description = "Name of the SSM document that brings the team's logins on every running engine in line with core's people secret."
+  value       = aws_ssm_document.database_provision_people.name
+}

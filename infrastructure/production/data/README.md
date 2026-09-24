@@ -44,8 +44,10 @@ The team members who use the team tools (the database GUIs). **It ships empty (`
 | `email` | yes | Their sign-in, and where their invitation goes. Unique |
 | `access` | yes | `read` only: production is read-only for everyone, and `write` fails the plan |
 
-**Adding someone:** add their entry and apply. Their database password is generated and kept, with everyone else's, in the secret `<project>-database-people-production-secret-vault` under `agent_<name>`. Only administrators read it: open it in the console and hand the person their own password over a private channel. Production has no front door: its tools are reached only through a private tunnel, opened with an AWS sign-in (IAM Identity Center).
+**Adding someone:** add their entry and apply. Their database password is generated and kept, with everyone else's, in the secret `<project>-database-people-production-secret-vault` under `agent_<name>`, with their access level. Only administrators read it: open it in the console and hand the person their own password over a private channel. Production has no front door: its tools are reached only through a private tunnel, opened with an AWS sign-in (IAM Identity Center).
 
-**Removing someone:** delete their entry and apply. Their sign-in and their password go at once, and their database logins on the next provisioning run.
+**Removing someone:** delete their entry and apply. Their sign-in and their password go at once.
+
+**When the logins change on the databases:** at the end of every apply, the workflow's *Provision People* step creates, updates and removes the `agent_` logins on every engine to match this file (and every service provisioned afterwards is covered at once). The **Provision people** workflow runs that step on its own.
 
 **A new database password for someone:** `terraform apply -replace='module.people.random_password.agent["<name>"]'`.

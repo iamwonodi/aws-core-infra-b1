@@ -129,6 +129,10 @@ Bootstrap formats the persistent volume only when it carries no filesystem, moun
 
 ---
 
+### The team's logins
+
+`provision-people.sh` makes each running engine's `agent_<name>` logins match core's people secret (`<project>-database-people-<environment>-secret-vault`), exactly as the managed databases' provisioning functions do: groups with default privileges on PostgreSQL, direct grants on MySQL, `readAnyDatabase` / `readWriteAnyDatabase` on MongoDB. Everything read from the secret is checked against core's patterns before any of it reaches an engine. It runs through the `<project>-database-provision-people` SSM document (sent by core's apply, after refreshing the scripts) and at the end of every `provision-service.sh`, so a new service's database is covered at once. Tests: `modules/platform/host-scripts/tests/test_people.sh` (offline) and `test_people_real.sh` (real PostgreSQL and MySQL, when the provisioning function's test variables are set).
+
 ## Correctness fixes made while building this module
 
 *(The original `bootstrap.py` compiler and `engine-map.json` were removed when the platforms-team model above replaced them; `provision.sh` now finds a container by its Compose project label.)*

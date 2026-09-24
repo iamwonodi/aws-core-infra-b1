@@ -65,6 +65,13 @@ resource "aws_s3_object" "database_provision_service" {
   etag   = filemd5(local.provision_service_script_path)
 }
 
+resource "aws_s3_object" "database_provision_people" {
+  bucket = var.deploy_bucket_name
+  key    = local.database_provision_people_key
+  source = local.provision_people_script_path
+  etag   = filemd5(local.provision_people_script_path)
+}
+
 # Core's per-engine provisioning scripts, fetched by the host exactly like the
 # rest of its platform scripts and verified against the same manifest.
 resource "aws_s3_object" "database_provisioning_scripts" {
@@ -87,6 +94,7 @@ resource "aws_ssm_parameter" "database_scripts_manifest" {
     aws_s3_object.database_update,
     aws_s3_object.database_provision,
     aws_s3_object.database_provision_service,
+    aws_s3_object.database_provision_people,
     aws_s3_object.database_provisioning_scripts,
   ]
 }
@@ -155,6 +163,37 @@ resource "aws_ssm_document" "database_provision" {
         inputs = {
           timeoutSeconds = "600"
           runCommand     = ["${local.database_workspace}/provision-service.sh '{{ serviceName }}'"]
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Project     = var.project_name
+    Environment = var.environment
+  }
+}
+
+# Brings the team's logins (agent_<name>, core's people list) on every running
+# engine in line with the people secret. Core's apply sends it after applying;
+# permission to send it is not permission to run arbitrary commands on the
+# database host. It takes no parameters: the only input is the people secret.
+resource "aws_ssm_document" "database_provision_people" {
+  name            = local.provision_people_document_name
+  document_type   = "Command"
+  document_format = "JSON"
+
+  content = jsonencode({
+    schemaVersion = "2.2"
+    description   = "Brings the team's database logins on the database host in line with core's people secret."
+
+    mainSteps = [
+      {
+        action = "aws:runShellScript"
+        name   = "provisionPeople"
+        inputs = {
+          timeoutSeconds = "600"
+          runCommand     = ["${local.database_workspace}/provision-people.sh"]
         }
       }
     ]

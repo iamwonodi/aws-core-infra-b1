@@ -152,6 +152,10 @@ merge  ->  semantic-release tags vX.Y.Z  ->  image built  ->  development deploy
 
 ---
 
+## People (the team's database logins)
+
+Add team members to `infrastructure/<env>/data/people.json` (see that folder's `README.md`) and apply. The apply's last step, *Provision People*, creates their `agent_<name>` logins on every engine. If it was skipped (staging's databases stopped) or failed, run the **Provision people** workflow for that environment. Each person's password is in `<project>-database-people-<env>-secret-vault`; hand it over privately.
+
 ## If it stops
 
 | Symptom | Usually |

@@ -38,8 +38,8 @@ run "each_person_gets_an_agent_login_and_a_sign_in" {
   }
 
   assert {
-    condition     = length(module.secret) == 1
-    error_message = "the passwords live in one secret for the environment"
+    condition     = aws_secretsmanager_secret.this.name == "acme-database-people-development-secret-vault"
+    error_message = "one secret for the environment, named in the platform's database family"
   }
 
   assert {
@@ -95,7 +95,7 @@ run "production_has_no_front_door" {
   }
 
   assert {
-    condition     = output.usernames == { tunde = "agent_tunde" } && length(module.secret) == 1
+    condition     = output.usernames == { tunde = "agent_tunde" } && aws_secretsmanager_secret.this.name == "acme-database-people-production-secret-vault"
     error_message = "people still get a database login and a password"
   }
 }
@@ -110,7 +110,7 @@ run "write_is_refused_where_everyone_is_read_only" {
   expect_failures = [terraform_data.people_invariants]
 }
 
-run "nobody_listed_creates_no_secret" {
+run "nobody_listed_keeps_an_empty_secret" {
   command = plan
 
   variables {
@@ -118,8 +118,8 @@ run "nobody_listed_creates_no_secret" {
   }
 
   assert {
-    condition     = length(module.secret) == 0 && output.secret_arn == null && length(aws_cognito_user.agent) == 0
-    error_message = "with nobody listed there is no secret and no sign-in (the pool itself remains)"
+    condition     = aws_secretsmanager_secret_version.this.secret_string == "{}" && length(aws_cognito_user.agent) == 0
+    error_message = "with nobody listed the secret is empty, which tells provisioning to remove every login, and there is no sign-in (the pool itself remains)"
   }
 }
 

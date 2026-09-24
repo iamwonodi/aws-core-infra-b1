@@ -93,14 +93,17 @@ resource "aws_lambda_function" "this" {
   }
 
   environment {
-    variables = {
-      DATABASE_HOST          = var.database_host
-      DATABASE_PORT          = tostring(var.database_port)
-      ADMIN_SECRET_ARN       = var.admin_secret_arn
-      ADMIN_DATABASE         = var.admin_database
-      ENGINE                 = var.engine
-      SERVICE_SECRET_PATTERN = local.service_secret_pattern
-    }
+    variables = merge(
+      {
+        DATABASE_HOST          = var.database_host
+        DATABASE_PORT          = tostring(var.database_port)
+        ADMIN_SECRET_ARN       = var.admin_secret_arn
+        ADMIN_DATABASE         = var.admin_database
+        ENGINE                 = var.engine
+        SERVICE_SECRET_PATTERN = local.service_secret_pattern
+      },
+      var.people_secret_arn == null ? {} : { PEOPLE_SECRET_ARN = var.people_secret_arn },
+    )
   }
 
   tags = merge(local.tags, { Name = local.function_name })

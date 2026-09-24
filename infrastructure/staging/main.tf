@@ -448,6 +448,10 @@ module "database_provisioning" {
   database_security_group_id = local.database_endpoints[each.key].security_group_id
   admin_secret_arn           = module.database_admin_secret[each.key].secret_arn
 
+  # Each function also brings the team's logins (agent_<name>) on its engine in
+  # line with the people secret.
+  people_secret_arn = module.people.secret_arn
+
   vpc_id     = module.network.vpc_id
   subnet_ids = module.network.isolated_subnet_ids
 

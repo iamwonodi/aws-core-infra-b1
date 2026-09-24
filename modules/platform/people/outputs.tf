@@ -9,8 +9,8 @@ output "access" {
 }
 
 output "secret_arn" {
-  description = "The secret holding every person's database password, keyed by database user. Null while nobody is listed."
-  value       = length(module.secret) > 0 ? module.secret[0].secret_arn : null
+  description = "The secret holding every person's database password and access level, keyed by database user. Provisioning reads it; an empty one means nobody."
+  value       = aws_secretsmanager_secret.this.arn
 }
 
 output "front_door" {

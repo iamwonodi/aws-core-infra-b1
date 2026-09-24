@@ -34,3 +34,13 @@ output "internal_alb_https_listener_arn" {
   value       = module.edge.internal_alb_https_listener_arn
   sensitive   = true
 }
+
+output "people_provisioning" {
+  description = "What core's apply calls to bring the team's logins in line with the people secret: the database host, the SSM document that refreshes its scripts, and the one that provisions people on every running engine."
+  value = {
+    kind             = "host"
+    instance_id      = module.database.database_instance_id
+    refresh_document = module.database.refresh_scripts_document_name
+    people_document  = module.database.provision_people_document_name
+  }
+}

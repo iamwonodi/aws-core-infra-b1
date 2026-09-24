@@ -19,7 +19,7 @@ setup(){
   rm -rf "$FAKE_ROOT" "$WS"
   mkdir -p "$FAKE_ROOT"/{secrets,s3/b,compose-state} "$WS"
   : > "$FAKE_ROOT/calls.log"
-  cp "$A/provision.sh" "$A/provision-service.sh" "$WS/"
+  cp "$A/provision.sh" "$A/provision-service.sh" "$A/provision-people.sh" "$WS/"
   # The platform scripts are installed flat in the workspace, as the fetch does.
   cp "$A"/provisioning/* "$WS/"
   cat > "$WS/.env" <<E
@@ -31,6 +31,8 @@ DEPLOY_BUCKET_NAME=b
 CORE_ROOT_SECRET_ARN=arn_core
 E
   printf '%s' '{"username":"admin","root_password":"R00t-pw.1"}' > "$FAKE_ROOT/secrets/arn_core"
+  # Core's people list: provision-service.sh brings it up to date afterwards.
+  printf '%s' '{"agent_ada":{"password":"Ada-pw.0123","access":"read"}}' > "$FAKE_ROOT/secrets/core-database-people-development-secret-vault"
   printf '%s' '{"db_name":"auth","db_user":"auth","db_password":"s3cret-pw.x"}' \
     > "$FAKE_ROOT/secrets/$(printf '%s' "$SECRET_ARN" | tr '/:' '__')"
   # An engine is running, as its own Compose project.
@@ -42,7 +44,7 @@ request(){ # <service> <engine> [secret-arn]
     "$1" "$2" "${3:-$SECRET_ARN}" > "$FAKE_ROOT/s3/b/provisioning/$1/config.json"
 }
 extra(){ printf '%s' "$2" > "$FAKE_ROOT/s3/b/provisioning/$1/extra.sql"; }
-run(){ bash "$WS/provision-service.sh" "$@"; }
+run(){ bash "$WS/provision-service.sh" "$@" < /dev/null; }
 execs(){ ls "$FAKE_ROOT/exec"/*.json 2>/dev/null | wc -l | tr -d ' '; }
 execn(){ cat "$FAKE_ROOT/exec/$(printf '%03d' "$1").json"; }
 export -f execn
@@ -53,7 +55,9 @@ echo "== provisioning a service"
 setup; request auth postgres
 run auth > "$WORK/out.txt" 2>&1; rc=$?
 check "succeeds"                                          test $rc -eq 0
-check "exactly one exec: only the standard script ran"    test "$(execs)" = 1
+check "the standard script, then the people step's query and script" test "$(execs)" = 3
+people_step_on(){ execn "$1" | jq -r .stdin | grep -q agent_group_read && execn "$1" | jq -r '.args | join(" ")' | grep -q "container-db-$2"; }
+check "the people step runs on the same engine, after"    people_step_on 3 postgres
 check "it ran against the engine's own container"         bash -c "execn 1 | jq -e '.args | index(\"container-db-postgres\") != null' >/dev/null"
 check "as the administrator (psql -U postgres)"           bash -c "execn 1 | jq -e '(.args | index(\"postgres\")) != null and (.args | index(\"psql\")) != null' >/dev/null"
 check "psql stops on the first error"                     bash -c "execn 1 | jq -e '.args | index(\"ON_ERROR_STOP=1\") != null' >/dev/null"
@@ -65,12 +69,12 @@ check "no secret value is printed"                        bash -c "! grep -q 's3
 echo "== running it again (Terraform triggers every apply)"
 before="$(execs)"; run auth >/dev/null 2>&1
 check "is still successful"                               test $? -eq 0
-check "and runs the same single script again"             test "$(execs)" = $((before + 1))
+check "and runs the same script and people step again"   test "$(execs)" = $((before + 3))
 
 echo "== the service's own extra SQL"
 setup; request auth postgres; extra auth 'CREATE EXTENSION IF NOT EXISTS pg_trgm;'
 run auth >/dev/null 2>&1
-check "two execs: the standard script, then the extra"    test "$(execs)" = 2
+check "the standard script, the extra, then people"      test "$(execs)" = 4
 check "the extra runs as the SERVICE's user, not postgres" bash -c "execn 2 | jq -e '(.args | index(\"auth\")) != null and (.args | index(\"postgres\") == null)' >/dev/null"
 check "on the service's own database"                     bash -c "execn 2 | jq -e '.args | index(\"-d\") != null' >/dev/null"
 check "with the service's password, never root's"         bash -c "execn 2 | jq -r '.args | join(\" \")' | grep -q 's3cret-pw.x' && ! execn 2 | jq -r '.args | join(\" \")' | grep -q 'R00t-pw.1'"

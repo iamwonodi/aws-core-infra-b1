@@ -61,10 +61,12 @@ locals {
   database_update_key            = "_platform/database/update.sh"
   database_provision_key         = "_platform/database/provision.sh"
   database_provision_service_key = "_platform/database/provision-service.sh"
+  database_provision_people_key  = "_platform/database/provision-people.sh"
 
   update_script_path            = "${path.module}/assets/update.sh"
   provision_script_path         = "${path.module}/assets/provision.sh"
   provision_service_script_path = "${path.module}/assets/provision-service.sh"
+  provision_people_script_path  = "${path.module}/assets/provision-people.sh"
 
   # Core's own provisioning script per engine: what actually creates a service's
   # database, user, password and grants. Core owns them so that every service is
@@ -83,6 +85,7 @@ locals {
       (local.database_update_key)            = filesha256(local.update_script_path)
       (local.database_provision_key)         = filesha256(local.provision_script_path)
       (local.database_provision_service_key) = filesha256(local.provision_service_script_path)
+      (local.database_provision_people_key)  = filesha256(local.provision_people_script_path)
     },
     { for key, path in local.provisioning_scripts : key => filesha256(path) },
   )
@@ -92,6 +95,8 @@ locals {
   update_document_name    = "${var.project_name}-database-update"
   refresh_document_name   = "${var.project_name}-database-refresh-scripts"
   provision_document_name = "${var.project_name}-database-provision"
+
+  provision_people_document_name = "${var.project_name}-database-provision-people"
 
   ##############################################################################
   # RUNTIME ENVIRONMENT AND USER DATA

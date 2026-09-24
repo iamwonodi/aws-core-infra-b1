@@ -54,3 +54,17 @@ output "deploy_bucket_name" {
   description = "Bucket holding the platform scripts a service's hosts install."
   value       = module.deploy.bucket_name
 }
+
+output "people_provisioning" {
+  description = "What core's apply calls to bring the team's logins in line with the people secret: each engine's provisioning function, and its database, whose state is checked first (a stopped staging database is skipped)."
+  value = {
+    kind = "managed"
+    engines = {
+      for engine, provisioning in module.database_provisioning : engine => {
+        function      = provisioning.function_name
+        database_kind = engine == "mongodb" ? "docdb" : "rds"
+        database_id   = engine == "mongodb" ? module.documentdb[0].id : module.database[engine].id
+      }
+    }
+  }
+}

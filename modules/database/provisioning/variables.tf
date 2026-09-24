@@ -46,6 +46,12 @@ variable "admin_secret_arn" {
   description = "ARN of the administrator credential. The function reads username and password from it."
 }
 
+variable "people_secret_arn" {
+  type        = string
+  default     = null
+  description = "ARN of the people secret: every team member's password and access level. With it, the function brings the engine's agent_<name> logins in line with that secret on {\"action\": \"people\"} and after every service it provisions. Null: no people."
+}
+
 variable "service_secret_pattern" {
   type        = string
   default     = null

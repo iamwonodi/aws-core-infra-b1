@@ -3,9 +3,9 @@
 #
 # The team members who use the team tools, from infrastructure/<env>/data/
 # people.json. For each person this module generates the password of their
-# database login, agent_<name>, and keeps every password of the environment in
-# ONE secret, which only administrators read: an administrator hands each person
-# their own. The logins themselves are created on the databases by the
+# database login, agent_<name>, and keeps every password and access level of
+# the environment in ONE secret, which only administrators read: an
+# administrator hands each person their own. The logins themselves are created on the databases by the
 # provisioning path (the database host in development, the functions on the
 # managed databases).
 #
@@ -56,20 +56,36 @@ resource "random_password" "agent" {
   override_special = "-_."
 }
 
-# One secret per environment, { "agent_<name>": "<password>" }. Its name begins
-# with "database-", which core reserves for the platform's own database secrets:
-# no service can be called that, and the fleets are denied every secret named so.
-module "secret" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-secrets-vault.git?ref=v1.0.0"
-  count  = length(var.people) > 0 ? 1 : 0
+# One secret per environment, always present (empty when nobody is listed, which
+# tells provisioning to remove every login):
+#
+#   { "agent_<name>": { "password": "...", "access": "read" | "write" }, ... }
+#
+# The access level lives here, not in a parameter, because the provisioning
+# functions of the managed databases can reach Secrets Manager and nothing else.
+#
+# Its name follows the platform's <project>-<name>-<environment>-secret-vault
+# convention, which the database host's permission to read secrets relies on,
+# and begins with "database-", which core reserves for the platform's own
+# database secrets: no service can be called that, and the fleets are denied
+# every secret named so.
+resource "aws_secretsmanager_secret" "this" {
+  name                    = "${var.project_name}-database-people-${var.environment}-secret-vault"
+  description             = "Every team member's database login password and access level, keyed by database user. Administrators hand each person their own."
+  recovery_window_in_days = 7
 
-  project_name = var.project_name
-  environment  = var.environment
-  service_name = "database-people"
+  tags = var.tags
+}
 
-  secret_kv_pairs = {
-    for name, username in local.usernames : username => random_password.agent[name].result
-  }
+resource "aws_secretsmanager_secret_version" "this" {
+  secret_id = aws_secretsmanager_secret.this.id
+
+  secret_string = jsonencode({
+    for name, person in var.people : local.usernames[name] => {
+      password = random_password.agent[name].result
+      access   = person.access
+    }
+  })
 }
 
 # ------------------------------------------------------------------------------

@@ -1,0 +1,33 @@
+#!/usr/bin/env python3
+"""Docker for the real-server people test: `docker exec <container> psql|mysql ...`
+runs that client locally against the test server instead of inside a container.
+The container name says which engine; `docker ps --filter` finds only the engines
+listed in REAL_ENGINES."""
+import os, subprocess, sys
+
+args = sys.argv[1:]
+if args[:1] == ["ps"]:
+    for i, a in enumerate(args):
+        if a == "--filter" and args[i + 1].startswith("label=com.docker.compose.project=db-"):
+            engine = args[i + 1].rsplit("db-", 1)[1]
+            if engine in os.environ.get("REAL_ENGINES", "").split():
+                print("container-db-" + engine)
+    sys.exit(0)
+if args[:1] != ["exec"]:
+    sys.stderr.write("real-bin docker: unhandled " + " ".join(args) + "\n"); sys.exit(99)
+
+rest, env = args[1:], dict(os.environ)
+while rest and rest[0].startswith("-"):
+    if rest[0] == "-e":
+        k, _, v = rest[1].partition("="); env[k] = v; rest = rest[2:]
+    else:
+        rest = rest[1:]
+container, command = rest[0], rest[1:]
+if command[0] == "psql":
+    env["PGPASSWORD"] = os.environ["PROVISION_TEST_PG_SUPERPASSWORD"]
+    command = ["psql", "-h", os.environ["PROVISION_TEST_PG_HOST"]] + command[1:]
+elif command[0] == "mysql":
+    command = ["mysql", "-h", os.environ["PROVISION_TEST_MYSQL_HOST"]] + command[1:]
+else:
+    sys.stderr.write("real-bin docker: no local " + command[0] + "\n"); sys.exit(99)
+sys.exit(subprocess.run(command, env=env).returncode)

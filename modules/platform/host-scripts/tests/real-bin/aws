@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# aws for the real-server people test: secrets come from $REAL_SECRETS/<id>.
+if [[ "$1 $2" == "secretsmanager get-secret-value" ]]; then
+  while [[ $# -gt 0 ]]; do [[ "$1" == "--secret-id" ]] && id="$2"; shift; done
+  [[ -f "${REAL_SECRETS}/${id}" ]] || { echo "ResourceNotFoundException: ${id}" >&2; exit 254; }
+  cat "${REAL_SECRETS}/${id}"; echo; exit 0
+fi
+echo "real-bin aws: unhandled $*" >&2; exit 99

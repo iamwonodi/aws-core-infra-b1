@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""Fake aws for provision-people.sh. State lives under $FAKE_AWS:
+  calls.log                    every call
+  ssm-status/<document>        the status that document's run ends in (default Success)
+  db-status/<id>               a database's state (default available)
+  lambda/<function>.json       what the function returns ({"FunctionError": ...} to fail)"""
+import json, os, sys
+
+root = os.environ["FAKE_AWS"]
+args = sys.argv[1:]
+with open(os.path.join(root, "calls.log"), "a") as f:
+    f.write("aws " + " ".join(args) + "\n")
+
+def opt(name):
+    return args[args.index(name) + 1] if name in args else None
+
+def read(path, default):
+    p = os.path.join(root, path)
+    return open(p).read().strip() if os.path.exists(p) else default
+
+if args[:2] == ["ssm", "send-command"]:
+    document = opt("--document-name")
+    open(os.path.join(root, "last-document"), "w").write(document)
+    print("cmd-" + document); sys.exit(0)
+if args[:2] == ["ssm", "get-command-invocation"]:
+    document = opt("--command-id")[4:]
+    status = read("ssm-status/" + document, "Success")
+    if opt("--query") == "Status":
+        print(status)
+    else:
+        print(json.dumps(["output of " + document, "" if status == "Success" else "it broke"]))
+    sys.exit(0)
+if args[:2] == ["rds", "describe-db-instances"]:
+    print(read("db-status/" + opt("--db-instance-identifier"), "available")); sys.exit(0)
+if args[:2] == ["docdb", "describe-db-clusters"]:
+    print(read("db-status/" + opt("--db-cluster-identifier"), "available")); sys.exit(0)
+if args[:2] == ["lambda", "invoke"]:
+    function = opt("--function-name")
+    reply = json.loads(read("lambda/" + function + ".json", '{"status": "people provisioned", "people": ["agent_ada"], "removed": []}'))
+    error = reply.pop("FunctionError", None)
+    open(args[-1], "w").write(json.dumps(reply))
+    meta = {"StatusCode": 200}
+    if error:
+        meta["FunctionError"] = error
+    print(json.dumps(meta)); sys.exit(0)
+sys.stderr.write("fake aws: unhandled " + " ".join(args) + "\n"); sys.exit(99)

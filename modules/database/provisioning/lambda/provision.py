@@ -91,6 +91,15 @@ IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SERVICE_NAME = re.compile(r"^[a-z][a-z0-9-]{1,20}[a-z0-9]$")
 PASSWORD = re.compile(r"^[A-Za-z0-9._-]+$")
 
+# A person's database login, agent_<name> (core's people list). Service users are
+# service names with underscores, and core refuses service names beginning
+# "agent-", so this pattern matches people and nothing else. The groups below
+# have an underscore after "agent_", which a person's name cannot have.
+PERSON = re.compile(r"^agent_[a-z][a-z0-9]{1,19}$")
+READ_GROUP = "agent_group_read"
+WRITE_GROUP = "agent_group_write"
+ACCESS_LEVELS = ("read", "write")
+
 secrets = boto3.client("secretsmanager")
 
 
@@ -310,11 +319,254 @@ def provision_mongodb(client, database, user, password):
         client.admin.command("createUser", user, pwd=password, roles=roles)
 
 
-def handler(event, context):  # noqa: ARG001
-    service = (event or {}).get("service_name", "")
 
-    if not SERVICE_NAME.match(service):
-        raise ProvisioningError(f"'{service}' is not a valid service name")
+# ------------------------------------------------------------------------------
+# People: the team's own logins, agent_<name>
+# ------------------------------------------------------------------------------
+# Core keeps every person's password and access level in one secret per
+# environment (PEOPLE_SECRET_ARN): { "agent_<name>": { "password", "access" } }.
+# Each function makes its engine match that secret exactly: a listed person gets
+# a login with their password and access on EVERY service's database, and any
+# agent_ login no longer listed is removed. It runs on its own ({"action":
+# "people"}, after core's apply) and at the end of every service's provisioning,
+# so a new service's database is covered the moment it exists.
+#
+# "read" can look at and query data; "write" can also add, change and delete it.
+# Neither can change tables, which is the services' migrations' job.
+# ------------------------------------------------------------------------------
+
+
+def read_people(arn):
+    """The people secret, checked: every name, password and access level is safe to use."""
+    people = read_secret(arn)
+
+    if not isinstance(people, dict):
+        raise ProvisioningError("the people secret is not a JSON object")
+
+    checked = {}
+    for user, entry in people.items():
+        if not PERSON.match(user):
+            raise ProvisioningError(f"'{user}' in the people secret is not agent_<name>")
+        if not isinstance(entry, dict) or entry.get("access") not in ACCESS_LEVELS:
+            raise ProvisioningError(f"{user} in the people secret has no access level of read or write")
+        quote_literal(entry.get("password") or "")  # refused unless it is core's alphabet
+        checked[user] = {"password": entry["password"], "access": entry["access"]}
+
+    return checked
+
+
+def service_databases_postgres(cursor, admin):
+    """Every service's database: owned by a role of its own name (core's convention)."""
+    cursor.execute(
+        "SELECT d.datname FROM pg_database d JOIN pg_roles r ON r.oid = d.datdba "
+        "WHERE r.rolname = d.datname AND NOT d.datistemplate "
+        "AND d.datname NOT IN ('postgres', 'rdsadmin') AND r.rolname <> %s ORDER BY 1",
+        (admin,),
+    )
+    return [row[0] for row in cursor.fetchall() if IDENTIFIER.match(row[0])]
+
+
+def people_postgres(connection, admin, people):
+    """Logins, group membership and removals, from the administrator's database.
+
+    Access is given through two groups, agent_group_read and agent_group_write,
+    rather than to each person: default privileges then cover tables a service
+    creates later, and a person's access changes by changing one membership.
+    """
+    administrator = quote_identifier(admin)
+    cursor = connection.cursor()
+
+    for group in (READ_GROUP, WRITE_GROUP):
+        cursor.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (group,))
+        if cursor.fetchone() is None:
+            cursor.execute(f"CREATE ROLE {quote_identifier(group)} NOLOGIN")
+
+    databases = service_databases_postgres(cursor, admin)
+
+    for database in databases:
+        name = quote_identifier(database)
+        # The administrator acts for each service's owner below (grants on its
+        # tables, default privileges), which needs membership, as when the
+        # service was provisioned. Granting again is a no-op.
+        cursor.execute(f"GRANT {name} TO {administrator}")
+        cursor.execute(f"GRANT CONNECT ON DATABASE {name} TO {quote_identifier(READ_GROUP)}, {quote_identifier(WRITE_GROUP)}")
+
+    for user, person in sorted(people.items()):
+        role = quote_identifier(user)
+        cursor.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (user,))
+        if cursor.fetchone() is None:
+            logger.info("Creating %s.", user)
+            cursor.execute(f"CREATE ROLE {role} LOGIN")
+        cursor.execute(f"ALTER ROLE {role} WITH LOGIN PASSWORD {quote_literal(person['password'])}")
+
+        member, other = (WRITE_GROUP, READ_GROUP) if person["access"] == "write" else (READ_GROUP, WRITE_GROUP)
+        cursor.execute(f"GRANT {quote_identifier(member)} TO {role}")
+        cursor.execute(f"REVOKE {quote_identifier(other)} FROM {role}")
+
+    removed = []
+    cursor.execute("SELECT rolname FROM pg_roles WHERE rolname LIKE %s ORDER BY 1", ("agent\\_%",))
+    for (user,) in cursor.fetchall():
+        if PERSON.match(user) and user not in people:
+            logger.info("Removing %s: no longer in the people list.", user)
+            cursor.execute(f"DROP ROLE {quote_identifier(user)}")
+            removed.append(user)
+
+    cursor.close()
+    return databases, removed
+
+
+def people_postgres_database(connection, owner):
+    """Inside one service's database: what each group may do, now and for tables created later."""
+    owner_role = quote_identifier(owner)
+    read, write = quote_identifier(READ_GROUP), quote_identifier(WRITE_GROUP)
+    cursor = connection.cursor()
+
+    cursor.execute(f"GRANT USAGE ON SCHEMA public TO {read}, {write}")
+
+    cursor.execute(f"GRANT SELECT ON ALL TABLES IN SCHEMA public TO {read}")
+    cursor.execute(f"GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO {read}")
+    cursor.execute(f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {write}")
+    cursor.execute(f"GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO {write}")
+
+    # Tables and sequences the service creates later, through its migrations.
+    cursor.execute(f"ALTER DEFAULT PRIVILEGES FOR ROLE {owner_role} IN SCHEMA public GRANT SELECT ON TABLES TO {read}")
+    cursor.execute(f"ALTER DEFAULT PRIVILEGES FOR ROLE {owner_role} IN SCHEMA public GRANT SELECT ON SEQUENCES TO {read}")
+    cursor.execute(
+        f"ALTER DEFAULT PRIVILEGES FOR ROLE {owner_role} IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {write}"
+    )
+    cursor.execute(
+        f"ALTER DEFAULT PRIVILEGES FOR ROLE {owner_role} IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO {write}"
+    )
+    cursor.close()
+
+
+def provision_people_postgres(host, port, admin, admin_password, admin_database, people):
+    connection = connect(host, port, admin, admin_password, admin_database)
+    try:
+        databases, removed = people_postgres(connection, admin, people)
+    finally:
+        connection.close()
+
+    for database in databases:
+        connection = connect(host, port, admin, admin_password, database)
+        try:
+            people_postgres_database(connection, database)
+        finally:
+            connection.close()
+
+    return databases, removed
+
+
+MYSQL_SYSTEM_SCHEMAS = ("mysql", "information_schema", "performance_schema", "sys")
+
+
+def provision_people_mysql(connection, people):
+    """Logins, and grants on every service's database, given to each person directly.
+
+    MySQL grants at the database level cover tables created later, so no group is
+    needed; direct grants also need only what the RDS master user has (every
+    privilege WITH GRANT OPTION), where granting a role would need ROLE_ADMIN.
+    """
+    cursor = connection.cursor()
+
+    # A service's database has a user of the same name (core's convention).
+    cursor.execute(
+        "SELECT s.SCHEMA_NAME FROM information_schema.SCHEMATA s "
+        "WHERE s.SCHEMA_NAME NOT IN (%s, %s, %s, %s) "
+        "AND EXISTS (SELECT 1 FROM mysql.user u WHERE u.User = s.SCHEMA_NAME) ORDER BY 1",
+        MYSQL_SYSTEM_SCHEMAS,
+    )
+    databases = [row[0] for row in cursor.fetchall() if IDENTIFIER.match(row[0]) and not PERSON.match(row[0])]
+
+    removed = []
+    cursor.execute("SELECT User FROM mysql.user WHERE Host = %s AND User LIKE %s ORDER BY 1", ("%", "agent\\_%"))
+    for (user,) in cursor.fetchall():
+        user = user.decode() if isinstance(user, bytes) else user
+        if PERSON.match(user) and user not in people:
+            logger.info("Removing %s: no longer in the people list.", user)
+            cursor.execute(f"DROP USER '{user}'@'%'")
+            removed.append(user)
+
+    for user, person in sorted(people.items()):
+        quote_mysql_identifier(user)  # refused before any statement if it is not a plain name
+        account = f"'{user}'@'%'"
+        secret = quote_literal(person["password"])
+
+        cursor.execute(f"CREATE USER IF NOT EXISTS {account} IDENTIFIED BY {secret}")
+        cursor.execute(f"ALTER USER {account} IDENTIFIED BY {secret}")
+
+        # Start from nothing each time, so a change from write to read, or a
+        # removed service, leaves no grant behind.
+        cursor.execute(f"REVOKE ALL PRIVILEGES, GRANT OPTION FROM {account}")
+
+        privileges = "SELECT, INSERT, UPDATE, DELETE" if person["access"] == "write" else "SELECT"
+        for database in databases:
+            # "_" is a wildcard in a database-level grant: escaped, as for services.
+            grant_name = "`" + database.replace("_", "\\_") + "`"
+            cursor.execute(f"GRANT {privileges} ON {grant_name}.* TO {account}")
+
+    cursor.close()
+    return databases, removed
+
+
+def provision_people_mongodb(client, people):
+    """Logins with read or read-write on every database, now and later.
+
+    readAnyDatabase and readWriteAnyDatabase are DocumentDB built-in roles,
+    granted on admin, where every user lives. There is nothing per database.
+    """
+    removed = []
+    existing = client.admin.command("usersInfo").get("users", [])
+    for entry in existing:
+        user = entry.get("user", "")
+        if PERSON.match(user) and user not in people:
+            logger.info("Removing %s: no longer in the people list.", user)
+            client.admin.command("dropUser", user)
+            removed.append(user)
+
+    present = {entry.get("user") for entry in existing}
+    for user, person in sorted(people.items()):
+        role = "readWriteAnyDatabase" if person["access"] == "write" else "readAnyDatabase"
+        roles = [{"role": role, "db": "admin"}]
+        if user in present:
+            client.admin.command("updateUser", user, pwd=person["password"], roles=roles)
+        else:
+            logger.info("Creating %s.", user)
+            client.admin.command("createUser", user, pwd=person["password"], roles=roles)
+
+    return removed
+
+
+def provision_people(engine, host, port, admin, admin_database):
+    """Make this engine's agent_ logins match the people secret. Returns what changed."""
+    secret_arn = os.environ.get("PEOPLE_SECRET_ARN")
+    if not secret_arn:
+        return None
+
+    people = read_people(secret_arn)
+
+    if engine == "mongodb":
+        client = connect_mongodb(host, port, admin["username"], admin["password"])
+        try:
+            removed = provision_people_mongodb(client, people)
+        finally:
+            client.close()
+        return {"people": sorted(people), "removed": removed}
+
+    if engine == "mysql":
+        connection = connect_mysql(host, port, admin["username"], admin["password"], admin_database)
+        try:
+            databases, removed = provision_people_mysql(connection, people)
+        finally:
+            connection.close()
+        return {"people": sorted(people), "removed": removed, "databases": databases}
+
+    databases, removed = provision_people_postgres(host, port, admin["username"], admin["password"], admin_database, people)
+    return {"people": sorted(people), "removed": removed, "databases": databases}
+
+
+def handler(event, context):  # noqa: ARG001
+    event = event or {}
 
     host = os.environ["DATABASE_HOST"]
     port = os.environ["DATABASE_PORT"]
@@ -324,6 +576,24 @@ def handler(event, context):  # noqa: ARG001
 
     if engine not in ("postgres", "mysql", "mongodb"):
         raise ProvisioningError(f"this function does not speak '{engine}'")
+
+    # {"action": "people"}: bring the team's logins in line with the people
+    # secret, and nothing else. Anyone who may invoke this may ask for it; it
+    # only ever applies what core wrote to that secret.
+    if event.get("action") == "people":
+        if not os.environ.get("PEOPLE_SECRET_ARN"):
+            raise ProvisioningError("this function has no PEOPLE_SECRET_ARN: core has not given it the people secret")
+
+        admin = read_secret(admin_secret_arn)
+        logger.info("Provisioning people on %s (%s).", host, engine)
+        result = provision_people(engine, host, port, admin, admin_database)
+        logger.info("Provisioned people: %s.", result)
+        return {"status": "people provisioned", "engine": engine, **result}
+
+    service = event.get("service_name", "")
+
+    if not SERVICE_NAME.match(service):
+        raise ProvisioningError(f"'{service}' is not a valid service name")
 
     # The service's secret is named, not passed: the caller cannot point this at
     # another service's credential.
@@ -350,32 +620,33 @@ def handler(event, context):  # noqa: ARG001
         finally:
             client.close()
 
-        logger.info("Provisioned %s.", service)
-        return {"service": service, "database": database, "user": user, "status": "provisioned"}
-
-    if engine == "mysql":
+    elif engine == "mysql":
         connection = connect_mysql(host, port, admin["username"], admin["password"], admin_database)
         try:
             provision_mysql(connection, database, user, password)
         finally:
             connection.close()
 
-        logger.info("Provisioned %s.", service)
-        return {"service": service, "database": database, "user": user, "status": "provisioned"}
+    else:
+        connection = connect(host, port, admin["username"], admin["password"], admin_database)
+        try:
+            provision(connection, database, user, password, admin["username"])
+        finally:
+            connection.close()
 
-    connection = connect(host, port, admin["username"], admin["password"], admin_database)
-    try:
-        provision(connection, database, user, password, admin["username"])
-    finally:
-        connection.close()
+        # The schema lives inside the new database, so a second connection is needed.
+        connection = connect(host, port, admin["username"], admin["password"], database)
+        try:
+            provision_schema(connection, user, admin["username"])
+        finally:
+            connection.close()
 
-    # The schema lives inside the new database, so a second connection is needed.
-    connection = connect(host, port, admin["username"], admin["password"], database)
-    try:
-        provision_schema(connection, user, admin["username"])
-    finally:
-        connection.close()
+    # The team's logins reach the new database straight away.
+    people = provision_people(engine, host, port, admin, admin_database)
 
     logger.info("Provisioned %s.", service)
 
-    return {"service": service, "database": database, "user": user, "status": "provisioned"}
+    result = {"service": service, "database": database, "user": user, "status": "provisioned"}
+    if people is not None:
+        result["people"] = people["people"]
+    return result

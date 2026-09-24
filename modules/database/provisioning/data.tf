@@ -54,15 +54,18 @@ data "aws_iam_policy_document" "this" {
     resources = ["${aws_cloudwatch_log_group.this.arn}:*"]
   }
 
-  # The administrator credential, and every service's own secret under core's
-  # naming convention. Nothing else in Secrets Manager.
+  # The administrator credential, every service's own secret under core's naming
+  # convention, and the people secret. Nothing else in Secrets Manager.
   statement {
     sid     = "Secrets"
     actions = ["secretsmanager:GetSecretValue"]
 
-    resources = [
-      var.admin_secret_arn,
-      "arn:aws:secretsmanager:${local.aws_region}:${local.account_id}:secret:${replace(local.service_secret_pattern, "{service}", "*")}-*",
-    ]
+    resources = concat(
+      [
+        var.admin_secret_arn,
+        "arn:aws:secretsmanager:${local.aws_region}:${local.account_id}:secret:${replace(local.service_secret_pattern, "{service}", "*")}-*",
+      ],
+      var.people_secret_arn == null ? [] : [var.people_secret_arn],
+    )
   }
 }
