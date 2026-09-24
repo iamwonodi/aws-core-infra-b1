@@ -177,7 +177,7 @@ resource "aws_iam_policy" "fleet_secrets_read" {
 ################################################################################
 
 module "private_profile" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-profile.git?ref=v1.1.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-profile.git?ref=v1.1.1"
 
   project_name = var.project_name
   environment  = var.environment
@@ -251,7 +251,7 @@ resource "aws_ssm_parameter" "private_autoscaling_group_arn" {
 ################################################################################
 
 module "internal_profile" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-profile.git?ref=v1.1.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-profile.git?ref=v1.1.1"
 
   project_name = var.project_name
   environment  = var.environment

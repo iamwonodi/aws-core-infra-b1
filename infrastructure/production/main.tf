@@ -360,7 +360,7 @@ module "database_admin_secret" {
 }
 
 module "database" {
-  source   = "git::https://github.com/iamwonodi/terraform-aws-rds-instance.git?ref=v1.0.0"
+  source   = "git::https://github.com/iamwonodi/terraform-aws-rds-instance.git?ref=v1.0.1"
   for_each = local.rds_engines
 
   project_name = var.project_name
@@ -401,7 +401,7 @@ module "database" {
 # MongoDB: one DocumentDB cluster. Its instances are spread across the isolated
 # subnets' zones; with more than one, a reader takes over if the writer fails.
 module "documentdb" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-documentdb.git?ref=v1.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-documentdb.git?ref=v1.0.1"
   count  = local.documentdb_enabled ? 1 : 0
 
   project_name = var.project_name

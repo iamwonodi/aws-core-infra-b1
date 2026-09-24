@@ -206,7 +206,7 @@ resource "aws_iam_policy" "database_platform_read" {
 }
 
 module "database_profile" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-profile.git?ref=v1.1.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-profile.git?ref=v1.1.1"
 
   project_name = var.project_name
   environment  = var.environment

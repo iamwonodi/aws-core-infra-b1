@@ -41,7 +41,10 @@ Core pins these tags. `terraform init` fails until they exist.
 | Module | Tag | Needed by |
 | --- | --- | --- |
 | `terraform-aws-autoscaling` | `v3.0.0` | core (shared fleets), service-infra (dedicated hosts) |
-| `terraform-aws-rds-instance` | `v1.0.0` | core (staging, production) |
+| `terraform-aws-rds-instance` | `v1.0.1` | core (staging, production) |
+| `terraform-aws-documentdb` | `v1.0.1` | core (staging, production, with `mongodb`) |
+| `terraform-aws-nacl-security` | `v1.0.2` | core (every environment) |
+| `terraform-aws-profile` | `v1.1.1` | core (fleets, database host, image builder) |
 | `terraform-aws-rds-cluster` | `v1.0.0` | nothing yet |
 
 For each: `fmt`, `init -upgrade`, `validate` on the root and `examples/complete`, commit the lock file, push, tag, push the tag.

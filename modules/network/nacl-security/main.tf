@@ -1,5 +1,5 @@
 module "nacl_security" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-nacl-security.git?ref=v1.0.1"
+  source = "git::https://github.com/iamwonodi/terraform-aws-nacl-security.git?ref=v1.0.2"
 
   vpc_id       = var.vpc_id
   project_name = var.project_name
