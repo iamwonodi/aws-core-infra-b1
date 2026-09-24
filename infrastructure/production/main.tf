@@ -265,6 +265,14 @@ module "image" {
 
   parent_image = var.ubuntu_parent_image
 
+  # What every host built from it relies on, as in development: the base
+  # packages (jq, curl, ...), Docker with Compose (every deploy runs Compose),
+  # the AWS CLI and Python. The module's defaults are all false.
+  enable_predefined_packages = true
+  enable_docker              = true
+  enable_aws_cli             = true
+  enable_python              = true
+
   # The build installs packages, Docker and the AWS CLI, so it needs outbound
   # internet access: the internal tier, which routes through NAT, never the
   # isolated one.
