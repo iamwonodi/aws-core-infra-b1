@@ -62,13 +62,18 @@ data "aws_iam_policy_document" "fleet_secrets_read" {
     ]
   }
 
+  # The platform's own database secrets -- the hub's administrator, the people's
+  # passwords -- all match the pattern above too. Service names beginning with
+  # "database-" are reserved (service-roles), so every secret named
+  # <project>-database-*-<environment>-... is the platform's, and denied.
   statement {
-    sid     = "NeverReadTheDatabaseHubSecret"
+    sid     = "NeverReadThePlatformDatabaseSecrets"
     effect  = "Deny"
     actions = ["secretsmanager:GetSecretValue"]
 
     resources = [
       "arn:aws:secretsmanager:${local.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}-${var.database_service_name}-${var.environment}-secret-vault-*",
+      "arn:aws:secretsmanager:${local.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}-database-*-${var.environment}-secret-vault-*",
     ]
   }
 }

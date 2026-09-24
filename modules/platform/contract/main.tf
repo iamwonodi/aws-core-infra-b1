@@ -60,7 +60,8 @@ locals {
 
     # The team's own tools (a database GUI, later others) run on hosts apart from
     # the customer fleets. Their repository finds its group and subnets here.
-    tools = var.tools
+    tools           = var.tools
+    team_front_door = var.team_front_door
 
     database = {
       host = var.database_host

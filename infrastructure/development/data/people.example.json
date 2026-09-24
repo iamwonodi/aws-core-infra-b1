@@ -1,0 +1,10 @@
+{
+  "ada": {
+    "email": "ada@example.org",
+    "access": "write"
+  },
+  "tunde": {
+    "email": "tunde@example.org",
+    "access": "read"
+  }
+}

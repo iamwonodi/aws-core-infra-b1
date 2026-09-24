@@ -71,6 +71,12 @@ locals {
   # secret, or the fleet-update SSM document).
   reserved_service_names = ["database", "database-hub", "fleet", "internal", "platform", "private", "services"]
 
+  # Whole families of names. "database-" is the platform's database secrets
+  # (<project>-database-admin-<engine>-..., -database-people-...), which the
+  # fleets are denied by that prefix. "agent-" would give a service the database
+  # user agent_<name>, which is a person's.
+  reserved_service_prefixes = ["database-", "agent-"]
+
   entry_keys = [for repository, entry in var.entries : "${entry.kind}/${entry.service_name}"]
 
   invalid_repository_keys = [
@@ -95,6 +101,7 @@ locals {
   reserved_names_used = [
     for repository, entry in var.entries : entry.service_name
     if contains(local.reserved_service_names, entry.service_name)
+    || anytrue([for prefix in local.reserved_service_prefixes : startswith(entry.service_name, prefix)])
   ]
 
   entries_with_unknown_tier = [
@@ -791,7 +798,7 @@ resource "terraform_data" "service_roles_invariants" {
 
     precondition {
       condition     = length(local.reserved_names_used) == 0
-      error_message = "These service names are reserved because the platform's own resources use them (${join(", ", local.reserved_service_names)}): ${join(", ", local.reserved_names_used)}."
+      error_message = "These service names are reserved because the platform's own resources use them (${join(", ", local.reserved_service_names)}, and any name beginning ${join(" or ", local.reserved_service_prefixes)}): ${join(", ", local.reserved_names_used)}."
     }
 
     precondition {

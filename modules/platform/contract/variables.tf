@@ -132,6 +132,16 @@ variable "tools" {
   description = "Where the team's own tools run: the group their hosts wear (the databases and the VPC endpoints admit it) and the subnets the hosts go in. Null in an environment that runs no tools."
 }
 
+variable "team_front_door" {
+  type = object({
+    user_pool_id  = string
+    user_pool_arn = string
+    domain        = string
+  })
+  default     = null
+  description = "The Cognito user pool the team tools' web addresses sit behind, and its sign-in domain prefix. The tools repository creates its app client and managed login style on it. Null where the tools have no web address (production)."
+}
+
 variable "database_host" {
   type        = string
   default     = null

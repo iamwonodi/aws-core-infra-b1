@@ -159,7 +159,7 @@ resource "aws_iam_policy" "fleet_deploy_read" {
 
 resource "aws_iam_policy" "fleet_secrets_read" {
   name        = "${var.project_name}-${var.environment}-fleet-secrets-read"
-  description = "Read access to this project's service secrets, resolved by update.sh at deploy time. The database hub secret is explicitly denied."
+  description = "Read access to this project's service secrets, resolved by update.sh at deploy time. The platform's database secrets (hub, people) are explicitly denied."
   policy      = data.aws_iam_policy_document.fleet_secrets_read.json
 }
 

@@ -546,3 +546,58 @@ run "no_managed_database_grants_no_invoke" {
     error_message = "with no managed database, the infra role may invoke nothing"
   }
 }
+
+run "a_reserved_service_name_fails" {
+  command = plan
+
+  variables {
+    entries = {
+      "a/one" = { service_name = "database-hub", kind = "app", tier = "private", owner_id = "1", repository_id = "2" }
+    }
+  }
+
+  expect_failures = [terraform_data.service_roles_invariants]
+}
+
+run "a_name_in_the_platforms_database_family_fails" {
+  command = plan
+
+  # Would be <project>-database-admin-mysql-<env>-secret-vault: the MySQL
+  # administrator's secret in staging and production.
+  variables {
+    entries = {
+      "a/one" = { service_name = "database-admin-mysql", kind = "app", tier = "private", owner_id = "1", repository_id = "2" }
+    }
+  }
+
+  expect_failures = [terraform_data.service_roles_invariants]
+}
+
+run "a_name_that_would_be_a_persons_database_user_fails" {
+  command = plan
+
+  # Would get the database user agent_ada: a person's.
+  variables {
+    entries = {
+      "a/one" = { service_name = "agent-ada", kind = "app", tier = "private", owner_id = "1", repository_id = "2" }
+    }
+  }
+
+  expect_failures = [terraform_data.service_roles_invariants]
+}
+
+run "a_name_merely_containing_a_reserved_word_is_allowed" {
+  command = plan
+
+  variables {
+    entries = {
+      "a/one" = { service_name = "mydatabase", kind = "app", tier = "private", owner_id = "1", repository_id = "2" }
+      "a/two" = { service_name = "useragent", kind = "app", tier = "private", owner_id = "3", repository_id = "4" }
+    }
+  }
+
+  assert {
+    condition     = length(output.service_roles) == 2
+    error_message = "only names BEGINNING with a reserved prefix are refused"
+  }
+}

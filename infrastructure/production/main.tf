@@ -455,6 +455,30 @@ module "database_provisioning" {
 }
 
 ################################################################################
+# PEOPLE
+#
+# The team members who use the team tools, from data/people.json (ships empty;
+# see data/README.md). Each gets a database login, agent_<name>, whose password
+# is kept in one secret that only administrators read and hand over.
+# Production's tools are reached only through a private tunnel, so there is no front door, and everyone is read-only.
+################################################################################
+
+module "people" {
+  source = "../../modules/platform/people"
+
+  project_name = var.project_name
+  environment  = local.environment
+  account_id   = data.aws_caller_identity.current.account_id
+
+  people = jsondecode(file("${path.module}/data/people.json"))
+
+  read_only  = true
+  front_door = false
+
+  tags = local.common_tags
+}
+
+################################################################################
 # PLATFORM CONTRACT
 #
 # What a service's repositories need to know about this environment, published as
@@ -503,6 +527,9 @@ module "platform_contract" {
     security_group_id = module.network.tools_security_group_id
     subnet_ids        = module.network.private_subnet_ids
   }
+
+  # The sign-in the tools' web addresses sit behind. Null in production.
+  team_front_door = module.people.front_door
 
   # The internal tier exists only while internal_tier_enabled is on.
   tiers = merge(

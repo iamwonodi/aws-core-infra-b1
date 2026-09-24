@@ -12,7 +12,7 @@ This is a **blueprint**: many projects clone it. Never commit anything project-s
 
 ## Layout
 
-`modules/` holds the four infrastructure domains — `network`, `edge`, `compute` (`image/` for the golden AMI and `deploy-bucket/`, both used by every environment), `database` (`host/` for development, `provisioning/` for the managed instance) — and `platform/`, which holds what is not infrastructure: `identity`, `service-roles`, `service-boundary`, `engines-role`, `contract` and `host-scripts`. A module used by exactly one domain is nested inside it (`edge/cloudfront`, `network/nacl-security`).
+`modules/` holds the four infrastructure domains — `network`, `edge`, `compute` (`image/` for the golden AMI and `deploy-bucket/`, both used by every environment), `database` (`host/` for development, `provisioning/` for the managed instance) — and `platform/`, which holds what is not infrastructure: `identity`, `service-roles`, `service-boundary`, `engines-role`, `contract`, `people` (the team's database logins and front door) and `host-scripts`. A module used by exactly one domain is nested inside it (`edge/cloudfront`, `network/nacl-security`).
 
 ## Architecture in one paragraph
 
@@ -35,7 +35,7 @@ terraform -chdir=infrastructure/<env> init -backend=false && terraform -chdir=in
 bash modules/platform/host-scripts/tests/run-all.sh
 bash scripts/ci/tests/run-all.sh
 bash modules/network/tests/run.sh
-(cd modules/platform/<module> && terraform init -backend=false && terraform test)     # identity, service-roles, service-boundary, contract, engines-role
+(cd modules/platform/<module> && terraform init -backend=false && terraform test)     # identity, service-roles, service-boundary, contract, engines-role, people
 (cd modules/database/schedule && terraform init -backend=false && terraform test)
 bash modules/database/provisioning/lambda/tests/run.sh
 python3 scripts/ci/check-bootstrap-closure.py infrastructure/*

@@ -23,6 +23,12 @@ variables {
     subnet_ids        = ["subnet-0p1", "subnet-0p2"]
   }
 
+  team_front_door = {
+    user_pool_id  = "af-south-1_AbCdEf123"
+    user_pool_arn = "arn:aws:cognito-idp:af-south-1:123456789012:userpool/af-south-1_AbCdEf123"
+    domain        = "core-development-team-123456789012"
+  }
+
   tiers = {
     private = {
       security_group_id     = "sg-0priv"
@@ -54,7 +60,7 @@ run "the_contract_has_the_documented_shape" {
 
   assert {
     condition = alltrue([
-      for key in ["schema_version", "project_name", "environment", "region", "account_id", "domain_name", "private_domain", "vpc_id", "ecr_registry_url", "hosting_model", "service_boundary_arn", "compute", "buckets", "fleet_update_document", "isolated", "tools", "database", "tiers"] :
+      for key in ["schema_version", "project_name", "environment", "region", "account_id", "domain_name", "private_domain", "vpc_id", "ecr_registry_url", "hosting_model", "service_boundary_arn", "compute", "buckets", "fleet_update_document", "isolated", "tools", "team_front_door", "database", "tiers"] :
       contains(keys(jsondecode(output.config_json)), key)
     ])
     error_message = "the contract is missing a documented field"
@@ -312,5 +318,27 @@ run "an_environment_without_tools_publishes_null" {
   assert {
     condition     = jsondecode(output.config_json).tools == null
     error_message = "an environment running no tools publishes tools as null"
+  }
+}
+
+run "the_tools_learn_their_front_door" {
+  command = plan
+
+  assert {
+    condition     = jsondecode(output.config_json).team_front_door.user_pool_id == "af-south-1_AbCdEf123" && jsondecode(output.config_json).team_front_door.domain == "core-development-team-123456789012"
+    error_message = "the tools repository learns the user pool and sign-in domain its web addresses sit behind"
+  }
+}
+
+run "an_environment_without_a_front_door_publishes_null" {
+  command = plan
+
+  variables {
+    team_front_door = null
+  }
+
+  assert {
+    condition     = jsondecode(output.config_json).team_front_door == null
+    error_message = "production, reached only through a tunnel, publishes no front door"
   }
 }
