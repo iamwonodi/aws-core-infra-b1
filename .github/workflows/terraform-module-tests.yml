@@ -12,6 +12,7 @@ name: Terraform Module Tests
 #   database-engines-role  the platforms team's generated role
 #   people            the platform list's database logins (mocked AWS)
 #   front-door        the tools' sign-in and the function behind it (mocked AWS)
+#   tools-role        the team-tools repository's generated role
 #   network           CIDR invariants (validations.tf, tested in isolation)
 # ==============================================================================
 
@@ -25,6 +26,7 @@ on:
       - "modules/platform/engines-role/**"
       - "modules/platform/people/**"
       - "modules/platform/front-door/**"
+      - "modules/platform/tools-role/**"
       - "modules/database/schedule/**"
       - "modules/network/variables.tf"
       - "modules/network/validations.tf"
@@ -41,6 +43,7 @@ on:
       - "modules/platform/engines-role/**"
       - "modules/platform/people/**"
       - "modules/platform/front-door/**"
+      - "modules/platform/tools-role/**"
       - "modules/database/schedule/**"
       - "modules/network/variables.tf"
       - "modules/network/validations.tf"
@@ -103,6 +106,12 @@ jobs:
 
       - name: front-door
         working-directory: modules/platform/front-door
+        run: |
+          terraform init -backend=false
+          terraform test
+
+      - name: tools-role
+        working-directory: modules/platform/tools-role
         run: |
           terraform init -backend=false
           terraform test

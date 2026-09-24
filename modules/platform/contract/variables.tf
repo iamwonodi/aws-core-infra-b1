@@ -52,7 +52,7 @@ variable "hosting_model" {
 variable "service_boundary_arn" {
   type        = string
   default     = null
-  description = "ARN of the permissions boundary every IAM role a service's infrastructure creates must carry. Set in a dedicated environment, null otherwise."
+  description = "ARN of the permissions boundary every IAM role created outside core must carry: a dedicated service's instance role, and in every environment the team tools' instance role."
 }
 
 variable "deploy_bucket_name" {

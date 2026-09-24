@@ -96,6 +96,34 @@ module "service_roles" {
   front_door_enabled = true
 }
 
+# The team-tools repository's role: its hosts, schedules and web addresses, and
+# nothing else (see modules/platform/tools-role). Grants nothing until
+# team_tools_repository is set; that repository's init script prints the lines.
+module "team_tools_role" {
+  source = "../../modules/platform/tools-role"
+
+  project_name   = var.project_name
+  environment    = local.environment
+  aws_region     = var.aws_region
+  account_id     = data.aws_caller_identity.current.account_id
+  subject_format = var.oidc_subject_format
+
+  repository = var.team_tools_repository == null ? null : {
+    name          = var.team_tools_repository
+    owner_id      = var.team_tools_repository_owner_id
+    repository_id = var.team_tools_repository_id
+  }
+
+  state_bucket_name        = local.state_bucket_name
+  permissions_boundary_arn = aws_iam_policy.service_boundary.arn
+  ami_parameter_name       = module.image.parameter_name
+
+  # The tools' web addresses: a rule on the private load balancer, behind the
+  # front door's sign-in.
+  listener_arn  = nonsensitive(module.edge.private_alb_https_listener_arn)
+  user_pool_arn = module.front_door.front_door.user_pool_arn
+}
+
 module "github_oidc" {
   source = "git::https://github.com/iamwonodi/terraform-aws-oidc.git?ref=v1.1.0"
 
@@ -145,7 +173,10 @@ module "github_service_roles" {
   create_oidc_provider = false # already created by module.github_oidc
   create_core_role     = false
 
-  service_roles = module.service_roles.service_roles
+  service_roles = merge(
+    module.service_roles.service_roles,
+    module.team_tools_role.service_roles,
+  )
 
   tags = local.common_tags
 

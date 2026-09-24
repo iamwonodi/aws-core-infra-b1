@@ -12,7 +12,7 @@ A service has **two repositories with different jobs**, so it gets **two entries
 | Field | Required | Meaning |
 | --- | --- | --- |
 | key | yes | The repository, `OWNER/REPOSITORY` |
-| `service_name` | yes | Lowercase letters, digits and hyphens, 3-22 characters. Both of a service's entries use the same one. It names the service's ECR repository, secret, target group and S3 prefixes, so it must be unique. The names `database`, `database-hub`, `fleet`, `internal`, `platform`, `private` and `services`, and any name beginning `database-`, are reserved |
+| `service_name` | yes | Lowercase letters, digits and hyphens, 3-22 characters. Both of a service's entries use the same one. It names the service's ECR repository, secret, target group and S3 prefixes, so it must be unique. The names `database`, `database-hub`, `fleet`, `internal`, `platform`, `private`, `services` and `team-tools`, and any name beginning `database-`, are reserved |
 | `kind` | yes | `infra` or `app` |
 | `tier` | yes | `private` or `internal`: which ALB and subnets the service uses. Both entries of a service must agree |
 | `owner_id`, `repository_id` | when the subject format is `immutable` (the default) | The numeric GitHub IDs of the owner and of **that** repository |

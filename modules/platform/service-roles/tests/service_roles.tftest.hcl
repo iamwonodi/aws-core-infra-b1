@@ -641,3 +641,15 @@ run "without_a_front_door_nothing_is_declared" {
     error_message = "production has no front door, so no declaration"
   }
 }
+
+run "the_team_tools_tag_is_reserved" {
+  command = plan
+
+  variables {
+    entries = {
+      "a/one" = { service_name = "team-tools", kind = "infra", tier = "private", owner_id = "1", repository_id = "2" }
+    }
+  }
+
+  expect_failures = [terraform_data.service_roles_invariants]
+}

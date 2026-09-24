@@ -514,3 +514,26 @@ variable "nat_type" {
   default     = "instance"
   description = "How private and internal hosts reach the internet: \"gateway\" (managed NAT Gateway) or \"instance\" (a NAT instance: far cheaper, but outbound traffic stops while it is recovered or replaced)."
 }
+
+variable "team_tools_repository" {
+  description = "The team-tools repository (OWNER/REPOSITORY), which runs the team's own tools (the database GUIs) on hosts of their own. Leave null until it exists: nothing is granted. Its init script prints these lines."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.team_tools_repository == null || can(regex("^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$", coalesce(var.team_tools_repository, "x")))
+    error_message = "team_tools_repository must be in OWNER/REPOSITORY format, or null."
+  }
+}
+
+variable "team_tools_repository_owner_id" {
+  description = "Numeric GitHub ID of that repository's owner. Required when oidc_subject_format is \"immutable\"."
+  type        = string
+  default     = null
+}
+
+variable "team_tools_repository_id" {
+  description = "Numeric GitHub ID of that repository. Required when oidc_subject_format is \"immutable\"."
+  type        = string
+  default     = null
+}

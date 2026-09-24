@@ -46,7 +46,7 @@ resource "terraform_data" "contract_version" {
   "buckets": { "deploy": "acme-development-deploy", "assets": "acme-development-assets" },
   "hosting_model": "shared",
   "compute": { "ami_parameter": "/acme/platform/ami/ubuntu", "scripts_manifest_parameter": "/acme/platform/scripts-manifest", "platform_prefix": "_platform" },
-  "service_boundary_arn": null,
+  "service_boundary_arn": "arn:aws:iam::<account>:policy/platform/<project>-service-boundary",
   "fleet_update_document": "acme-fleet-update",
   "isolated": { "security_group_id": "sg-..." },
   "tools": { "security_group_id": "sg-...", "subnet_ids": ["subnet-...", "subnet-..."] },
@@ -62,7 +62,7 @@ resource "terraform_data" "contract_version" {
 | Field | A service uses it to |
 | --- | --- |
 | `hosting_model` | know whether services run on shared fleets (`shared`, development) or create their own hosts (`dedicated`, staging and production) |
-| `service_boundary_arn` | (dedicated only) set as the `permissions_boundary` of every IAM role the infra repository creates, which it may create only under the path `/services/<service>/` and with a `Service` tag |
+| `service_boundary_arn` | the permissions boundary every IAM role created outside core must carry: a dedicated service's instance role, and in every environment the team tools' |
 | `compute.ami_parameter` | (dedicated) read the golden AMI's ID for a launch template. Read the PARAMETER, never copy the ID: core rebuilding the image then reaches you on the next plan |
 | `compute.scripts_manifest_parameter`, `compute.platform_prefix` | (dedicated) install core's deploy scripts from `<deploy bucket>/_platform/`, verifying each against the manifest |
 | `tiers.<tier>.subnet_ids` | (dedicated) where a service's own hosts go, so no service repository hard-codes the network. Null on a shared fleet |
