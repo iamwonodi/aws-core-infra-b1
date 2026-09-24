@@ -193,10 +193,9 @@ module "vpc_endpoint_sg" {
 # A single unrestricted outbound rule for public, private, internal, tools and
 # the vpc-endpoint security groups -- outbound traffic isn't the primary
 # control point in this architecture (inbound rules and subnet routing
-# are), so this stays permissive by design. The isolated tier deliberately
-# receives no egress rule at all here: it has no NAT route to use one
-# with anyway, and reaches AWS services only through the VPC endpoints
-# below.
+# are), so this stays permissive by design. The isolated tier is handled
+# separately below: it has no NAT route, and its outbound is limited to what it
+# can reach anyway.
 ################################################################################
 
 module "global_outbound_routing" {
@@ -217,6 +216,35 @@ module "global_outbound_routing" {
 
   ip_protocol = "-1"
   cidr_ipv4   = local.all_network
+}
+
+# The isolated tier starts connections too: its hosts and functions call the VPC
+# endpoints (SSM, ECR, Secrets Manager: interface endpoints inside the VPC) and
+# S3 (the gateway endpoint, reached at S3's own addresses). A security group
+# governs the connections an instance may start, so without these the database
+# host could not boot its scripts or be reached by SSM, and the provisioning
+# functions could not read a secret. Nothing here reaches the internet: the
+# isolated route table has no internet or NAT route.
+module "isolated_outbound_within_vpc" {
+  source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v1.0.0"
+
+  security_group_id = module.isolated_sg.security_group_id
+  description       = "Allow the isolated tier to reach the VPC endpoints and the VPC's own hosts"
+
+  ip_protocol = "-1"
+  cidr_ipv4   = var.vpc_cidr
+}
+
+# S3 through the gateway endpoint: its prefix list is S3's address ranges in
+# this Region. The module above takes no prefix list, so the provider's resource.
+resource "aws_vpc_security_group_egress_rule" "isolated_to_s3" {
+  security_group_id = module.isolated_sg.security_group_id
+  description       = "Allow the isolated tier to reach S3 through the gateway endpoint"
+
+  ip_protocol    = "tcp"
+  from_port      = 443
+  to_port        = 443
+  prefix_list_id = data.aws_ec2_managed_prefix_list.s3.id
 }
 
 ################################################################################

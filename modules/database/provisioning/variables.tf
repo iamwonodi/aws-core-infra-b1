@@ -112,3 +112,8 @@ variable "tags" {
   default     = {}
   description = "Tags applied to every resource this module creates."
 }
+
+variable "isolated_security_group_id" {
+  type        = string
+  description = "The isolated tier's security group, which the function also wears: the Secrets Manager endpoint admits it, and its outbound rules let the function reach the database and the endpoint."
+}

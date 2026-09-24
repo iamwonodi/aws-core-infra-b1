@@ -501,6 +501,10 @@ module "database_provisioning" {
   vpc_id     = module.network.vpc_id
   subnet_ids = module.network.isolated_subnet_ids
 
+  # Worn beside the function's own group: admitted by the Secrets Manager
+  # endpoint, and allowed to start connections.
+  isolated_security_group_id = module.network.isolated_security_group_id
+
   tags = local.common_tags
 }
 

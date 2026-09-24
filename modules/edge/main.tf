@@ -190,6 +190,21 @@ module "private_alb_sg_ingress_rule" {
   prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront.id
 }
 
+# A load balancer opens connections of its own: to its targets (every request
+# and health check) and, for a rule with a sign-in step, to the identity
+# provider's token endpoint on the internet (through NAT). Terraform removes
+# AWS's default allow-all outbound rule when it creates a security group, so
+# without this rule the load balancer could reach nothing at all.
+module "private_alb_sg_egress_rule" {
+  source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v1.0.0"
+
+  security_group_id = module.private_alb_sg.security_group_id
+  description       = "Allow the load balancer to reach its targets and identity provider"
+
+  ip_protocol = "-1"
+  cidr_ipv4   = "0.0.0.0/0"
+}
+
 module "private_alb" {
   source = "git::https://github.com/iamwonodi/terraform-aws-load-balancer.git?ref=v1.0.0"
 
@@ -236,6 +251,19 @@ module "internal_alb_sg_ingress_rule" {
   from_port                    = 443
   to_port                      = 443
   referenced_security_group_id = var.private_security_group_id
+}
+
+# As for the private load balancer: without an outbound rule it could reach
+# none of its targets.
+module "internal_alb_sg_egress_rule" {
+  source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v1.0.0"
+  count  = var.internal_tier_enabled ? 1 : 0
+
+  security_group_id = module.internal_alb_sg[0].security_group_id
+  description       = "Allow the load balancer to reach its targets"
+
+  ip_protocol = "-1"
+  cidr_ipv4   = "0.0.0.0/0"
 }
 
 module "internal_alb" {

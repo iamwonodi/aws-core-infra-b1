@@ -17,14 +17,13 @@
 # it, so a caller cannot point it at another service's credential, and it runs no
 # SQL the caller supplies.
 #
-# Logs: the isolated subnets have no route to the internet, so the function can
-# only reach CloudWatch Logs through an interface endpoint. The network module
-# creates one. Without it the function would run and write nothing, and a failure
-# would be invisible.
+# Logs: Lambda delivers a function's logs itself, not over the function's own
+# network connection, so the isolated subnets need no route or endpoint for them.
 # ------------------------------------------------------------------------------
 
 # The function's own group, so the database's rule names the function rather than
-# a whole subnet. It needs no ingress: it only makes outbound connections.
+# a whole subnet. It needs no ingress: it only makes outbound connections, which
+# the isolated tier's group (also worn) allows.
 resource "aws_security_group" "this" {
   name        = "${local.function_name}-sg"
   description = "Provisioning function ${local.function_name}."
@@ -87,9 +86,12 @@ resource "aws_lambda_function" "this" {
   timeout     = var.timeout_seconds
   memory_size = 256
 
+  # Its own group, which the database's rule names, and the isolated tier's,
+  # which the Secrets Manager endpoint admits and whose outbound rules let it
+  # start its connections (its own group has none).
   vpc_config {
     subnet_ids         = var.subnet_ids
-    security_group_ids = [aws_security_group.this.id]
+    security_group_ids = [aws_security_group.this.id, var.isolated_security_group_id]
   }
 
   environment {

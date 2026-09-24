@@ -339,6 +339,12 @@ module "nacl_security" {
   #
   # Isolated only returns traffic; it does not initiate connections back to
   # Private/Internal under this subnet-boundary policy.
+  #
+  # The one way out: HTTPS to S3 through the gateway endpoint (scripts, and the
+  # layers of every ECR image), which is reached at S3's own addresses. A network
+  # ACL cannot name a prefix list, so the rule says 0.0.0.0/0; the isolated route
+  # table has no internet or NAT route, so S3 is all it can reach. Its security
+  # group narrows it to S3's prefix list.
   # ============================================================================
 
   isolated_ingress_rules = {
@@ -366,6 +372,16 @@ module "nacl_security" {
       rule_action = "allow"
       cidr_block  = var.isolated_cidr_block
       from_port   = 0
+      to_port     = 65535
+    }
+
+    # S3's replies to the HTTPS below.
+    ephemeral_from_s3 = {
+      rule_number = 130
+      protocol    = "tcp"
+      rule_action = "allow"
+      cidr_block  = "0.0.0.0/0"
+      from_port   = 1024
       to_port     = 65535
     }
   }
@@ -396,6 +412,15 @@ module "nacl_security" {
       cidr_block  = var.isolated_cidr_block
       from_port   = 0
       to_port     = 65535
+    }
+
+    https_to_s3 = {
+      rule_number = 130
+      protocol    = "tcp"
+      rule_action = "allow"
+      cidr_block  = "0.0.0.0/0"
+      from_port   = 443
+      to_port     = 443
     }
   }
 }
