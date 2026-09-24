@@ -49,6 +49,7 @@ resource "terraform_data" "contract_version" {
   "service_boundary_arn": null,
   "fleet_update_document": "acme-fleet-update",
   "isolated": { "security_group_id": "sg-..." },
+  "tools": { "security_group_id": "sg-...", "subnet_ids": ["subnet-...", "subnet-..."] },
   "database": { "host": "db.dev.example.org", "provision_document": "acme-database-provision", "provision_function": null, "update_document": "acme-database-update", "engines": {} },
   "tiers": {
     "private":  { "security_group_id": "sg-...", "alb_security_group_id": "sg-...", "asg_name": "...", "listener_arn": "arn:...", "subnet_ids": null },
@@ -77,6 +78,7 @@ resource "terraform_data" "contract_version" {
 | `database.provision_function` | the same job on a **managed** database: invoke this Lambda with `{"service_name": "<service>"}`. Exactly one of these two is set, never both. With several engines, `database.host` and this field describe PostgreSQL; use `database.engines` |
 | `database.engines` | (managed databases, staging and production) every active engine, by name: `{"postgres": {"host", "port", "provision_function"}, "mysql": {...}}`. A service connects to its engine's `host` and `port` and provisions through its `provision_function`, which is null while the function does not yet speak that engine. A MongoDB service (DocumentDB) authenticates with `authSource=admin`, over TLS, with `retryWrites=false`; development's MongoDB accepts the same. Empty in development |
 | `database.update_document` | (the platforms team's pipeline, development only) apply the engines it published under `database/` in the deploy bucket. Null on a managed database |
+| `tools.security_group_id`, `tools.subnet_ids` | (the team-tools repository, not services) the group the team's own tools hosts wear, which the databases, the database host's engine ports (opened by the platforms team's pipeline) and the VPC endpoints admit, and the private subnets those hosts go in. Like the tier groups it has no inbound rules. The platforms team's pipeline opens each engine's port to it as well as to the tiers |
 
 In a `dedicated` environment `fleet_update_document`, `database.provision_document`, `database.update_document` and the tiers' `asg_name` are `null`: each service has its own configuration bucket and update document, which its infra repository creates and describes in `/<project>/services/<service>/config`. `buckets.deploy` is still set there, because the service's hosts install core's scripts from its `_platform/` prefix.
 

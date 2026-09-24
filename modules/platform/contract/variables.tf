@@ -123,6 +123,15 @@ variable "isolated_security_group_id" {
   description = "Security group of the isolated tier, where the databases live."
 }
 
+variable "tools" {
+  type = object({
+    security_group_id = string
+    subnet_ids        = list(string)
+  })
+  default     = null
+  description = "Where the team's own tools run: the group their hosts wear (the databases and the VPC endpoints admit it) and the subnets the hosts go in. Null in an environment that runs no tools."
+}
+
 variable "database_host" {
   type        = string
   default     = null

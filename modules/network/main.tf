@@ -153,6 +153,20 @@ module "internal_sg" {
   description  = local.internal_sg_description
 }
 
+# The team's own tools (a database GUI, later others) run on hosts of their own,
+# apart from the fleets that serve customers, and wear this group. Like the tier
+# groups it has no inbound rules: it is what the databases and the VPC endpoints
+# admit, so a tools host can reach them without wearing a customer tier's group.
+module "tools_sg" {
+  source = "git::https://github.com/iamwonodi/terraform-aws-security-group.git?ref=v1.0.0"
+
+  project_name = var.project_name
+  environment  = var.environment
+  vpc_id       = module.vpc_base.vpc_id
+  sg_name      = local.tools_sg_name
+  description  = local.tools_sg_description
+}
+
 module "isolated_sg" {
   source = "git::https://github.com/iamwonodi/terraform-aws-security-group.git?ref=v1.0.0"
 
@@ -176,7 +190,7 @@ module "vpc_endpoint_sg" {
 ################################################################################
 # OUTBOUND (EGRESS) RULES
 #
-# A single unrestricted outbound rule for public, private, internal, and
+# A single unrestricted outbound rule for public, private, internal, tools and
 # the vpc-endpoint security groups -- outbound traffic isn't the primary
 # control point in this architecture (inbound rules and subnet routing
 # are), so this stays permissive by design. The isolated tier deliberately
@@ -188,12 +202,15 @@ module "vpc_endpoint_sg" {
 module "global_outbound_routing" {
   source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v1.0.0"
 
-  for_each = toset([
-    module.public_sg.security_group_id,
-    module.private_sg.security_group_id,
-    module.internal_sg.security_group_id,
-    module.vpc_endpoint_sg.security_group_id,
-  ])
+  # Keyed by a fixed name, not by the group's ID: the IDs exist only after apply,
+  # and for_each must know its keys when the plan is made.
+  for_each = {
+    public       = module.public_sg.security_group_id
+    private      = module.private_sg.security_group_id
+    internal     = module.internal_sg.security_group_id
+    tools        = module.tools_sg.security_group_id
+    vpc-endpoint = module.vpc_endpoint_sg.security_group_id
+  }
 
   security_group_id = each.value
   description       = "Allow outbound connection pathways"

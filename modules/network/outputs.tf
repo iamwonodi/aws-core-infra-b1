@@ -42,3 +42,8 @@ output "isolated_security_group_id" {
   description = "Security group ID for the isolated tier."
   value       = module.isolated_sg.security_group_id
 }
+
+output "tools_security_group_id" {
+  description = "Security group worn by the team's own tools. The databases and the VPC endpoints admit it."
+  value       = module.tools_sg.security_group_id
+}

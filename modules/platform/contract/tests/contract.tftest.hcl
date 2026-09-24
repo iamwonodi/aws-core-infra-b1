@@ -18,6 +18,11 @@ variables {
   database_provision_document_name = "core-database-provision"
   database_update_document_name    = "core-database-update"
 
+  tools = {
+    security_group_id = "sg-0tools"
+    subnet_ids        = ["subnet-0p1", "subnet-0p2"]
+  }
+
   tiers = {
     private = {
       security_group_id     = "sg-0priv"
@@ -49,7 +54,7 @@ run "the_contract_has_the_documented_shape" {
 
   assert {
     condition = alltrue([
-      for key in ["schema_version", "project_name", "environment", "region", "account_id", "domain_name", "private_domain", "vpc_id", "ecr_registry_url", "hosting_model", "service_boundary_arn", "compute", "buckets", "fleet_update_document", "isolated", "database", "tiers"] :
+      for key in ["schema_version", "project_name", "environment", "region", "account_id", "domain_name", "private_domain", "vpc_id", "ecr_registry_url", "hosting_model", "service_boundary_arn", "compute", "buckets", "fleet_update_document", "isolated", "tools", "database", "tiers"] :
       contains(keys(jsondecode(output.config_json)), key)
     ])
     error_message = "the contract is missing a documented field"
@@ -281,4 +286,31 @@ run "an_unknown_engine_is_refused" {
   }
 
   expect_failures = [var.database_engines]
+}
+
+run "the_tools_hosts_learn_their_group_and_subnets" {
+  command = plan
+
+  assert {
+    condition     = jsondecode(output.config_json).tools.security_group_id == "sg-0tools"
+    error_message = "the tools repository learns the group its hosts wear, which the databases and the VPC endpoints admit"
+  }
+
+  assert {
+    condition     = jsondecode(output.config_json).tools.subnet_ids == ["subnet-0p1", "subnet-0p2"]
+    error_message = "the tools repository learns where its hosts go, rather than hard-coding the network"
+  }
+}
+
+run "an_environment_without_tools_publishes_null" {
+  command = plan
+
+  variables {
+    tools = null
+  }
+
+  assert {
+    condition     = jsondecode(output.config_json).tools == null
+    error_message = "an environment running no tools publishes tools as null"
+  }
 }

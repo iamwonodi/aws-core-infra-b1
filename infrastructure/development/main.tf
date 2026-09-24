@@ -325,6 +325,13 @@ module "platform_contract" {
   database_provision_document_name = module.database.provision_document_name
   database_update_document_name    = module.database.update_document_name
 
+  # The team's own tools run in the private subnets on hosts of their own,
+  # wearing the tools group rather than a customer tier's.
+  tools = {
+    security_group_id = module.network.tools_security_group_id
+    subnet_ids        = module.network.private_subnet_ids
+  }
+
   # The internal tier exists only while internal_tier_enabled is on.
   tiers = merge(
     {

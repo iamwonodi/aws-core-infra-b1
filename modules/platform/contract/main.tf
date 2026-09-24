@@ -58,6 +58,10 @@ locals {
       security_group_id = var.isolated_security_group_id
     }
 
+    # The team's own tools (a database GUI, later others) run on hosts apart from
+    # the customer fleets. Their repository finds its group and subnets here.
+    tools = var.tools
+
     database = {
       host = var.database_host
 

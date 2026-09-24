@@ -385,10 +385,12 @@ module "database" {
   vpc_id     = module.network.vpc_id
   subnet_ids = module.network.isolated_subnet_ids
 
-  # Only the tiers whose hosts run the services may reach it.
+  # Only the tiers whose hosts run the services, and the team's tools (a
+  # database GUI), may reach it.
   allowed_security_group_ids = [
     module.network.private_security_group_id,
     module.network.internal_security_group_id,
+    module.network.tools_security_group_id,
   ]
 
   enabled_cloudwatch_logs_exports = local.rds_engine_settings[each.key].log_exports
@@ -417,10 +419,12 @@ module "documentdb" {
   vpc_id     = module.network.vpc_id
   subnet_ids = module.network.isolated_subnet_ids
 
-  # Only the tiers whose hosts run the services may reach it.
+  # Only the tiers whose hosts run the services, and the team's tools (a
+  # database GUI), may reach it.
   allowed_security_group_ids = [
     module.network.private_security_group_id,
     module.network.internal_security_group_id,
+    module.network.tools_security_group_id,
   ]
 
   tags = local.common_tags
@@ -524,6 +528,13 @@ module "platform_contract" {
 
   assets_bucket_name         = module.edge.assets_bucket_id
   isolated_security_group_id = module.network.isolated_security_group_id
+
+  # The team's own tools run in the private subnets on hosts of their own,
+  # wearing the tools group rather than a customer tier's.
+  tools = {
+    security_group_id = module.network.tools_security_group_id
+    subnet_ids        = module.network.private_subnet_ids
+  }
 
   # The internal tier exists only while internal_tier_enabled is on.
   tiers = merge(
