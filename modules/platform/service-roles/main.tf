@@ -73,9 +73,9 @@ locals {
 
   # Whole families of names. "database-" is the platform's database secrets
   # (<project>-database-admin-<engine>-..., -database-people-...), which the
-  # fleets are denied by that prefix. "agent-" would give a service the database
-  # user agent_<name>, which is a person's.
-  reserved_service_prefixes = ["database-", "agent-"]
+  # fleets are denied by that prefix. People's database logins need no reserved
+  # name: they are <scope>.<name>, and a service's user never contains a dot.
+  reserved_service_prefixes = ["database-"]
 
   entry_keys = [for repository, entry in var.entries : "${entry.kind}/${entry.service_name}"]
 

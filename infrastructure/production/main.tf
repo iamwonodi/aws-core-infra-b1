@@ -448,9 +448,15 @@ module "database_provisioning" {
   database_security_group_id = local.database_endpoints[each.key].security_group_id
   admin_secret_arn           = module.database_admin_secret[each.key].secret_arn
 
-  # Each function also brings the team's logins (agent_<name>) on its engine in
-  # line with the people secret.
+  # Each function also provisions people's logins on its engine: the platform
+  # list (platform.<name>, the people secret) and, with each service, that
+  # service's agents (<service>.<name>, from its own secret).
   people_secret_arn = module.people.secret_arn
+
+  # A service's agents may write in production only with core's approval: their
+  # login listed in data/agent-write-exceptions.json (ships empty).
+  agents_write_needs_approval = true
+  write_exceptions            = jsondecode(file("${path.module}/data/agent-write-exceptions.json"))
 
   vpc_id     = module.network.vpc_id
   subnet_ids = module.network.isolated_subnet_ids
@@ -461,10 +467,13 @@ module "database_provisioning" {
 ################################################################################
 # PEOPLE
 #
-# The team members who use the team tools, from data/people.json (ships empty;
-# see data/README.md). Each gets a database login, agent_<name>, whose password
-# is kept in one secret that only administrators read and hand over.
-# Production's tools are reached only through a private tunnel, so there is no front door, and everyone is read-only.
+# The platform list: you and anyone trusted platform-wide, from data/people.json
+# (ships empty; see data/README.md). Each gets a login on EVERY service's
+# database, platform.<name>, read or write; the passwords are kept in one secret
+# that only administrators read and hand over. A service's own agents are that
+# service's business: they are declared in its repository and reach only its
+# database.
+# Production's tools are reached only through a private tunnel, so there is no front door.
 ################################################################################
 
 module "people" {
@@ -476,7 +485,9 @@ module "people" {
 
   people = jsondecode(file("${path.module}/data/people.json"))
 
-  read_only  = true
+  # Core's own list is approved by core's production review, so "write" is
+  # allowed here; a service's agents need an exception (agent-write-exceptions.json).
+  read_only  = false
   front_door = false
 
   tags = local.common_tags

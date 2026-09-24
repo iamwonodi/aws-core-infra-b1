@@ -2,8 +2,8 @@
 # ==============================================================================
 # PROVISION PEOPLE
 #
-# Brings the team's database logins (agent_<name>, from data/people.json) in
-# line with the people secret core has just applied. Run by the apply workflow
+# Brings the platform's database logins (platform.<name>, from
+# data/people.json) in line with the people secret core has just applied. Run by the apply workflow
 # after every apply, and by the "Provision people" workflow on demand.
 #
 # What it calls comes from the environment's people_provisioning output:

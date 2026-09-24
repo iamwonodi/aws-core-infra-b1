@@ -3,7 +3,7 @@
 #
 # The team members who use the team tools, from infrastructure/<env>/data/
 # people.json. For each person this module generates the password of their
-# database login, agent_<name>, and keeps every password and access level of
+# database login, platform.<name>, and keeps every password and access level of
 # the environment in ONE secret, which only administrators read: an
 # administrator hands each person their own. The logins themselves are created on the databases by the
 # provisioning path (the database host in development, the functions on the
@@ -19,14 +19,14 @@
 # not with the platform.
 #
 # TO GIVE SOMEONE A NEW DATABASE PASSWORD: replace their random_password, e.g.
-# terraform apply -replace='module.people.random_password.agent["ada"]'.
+# terraform apply -replace='module.people.random_password.person["ada"]'.
 # ------------------------------------------------------------------------------
 
 locals {
-  # Every person's database user. The prefix marks a person rather than a
-  # service (a service's user is its name with underscores); core refuses
-  # service names beginning with "agent-" so the two can never collide.
-  usernames = { for name, person in var.people : name => "agent_${name}" }
+  # Every person's database login, platform.<name>: this list reaches every
+  # service's database. A service's own user never contains a dot, and a
+  # service's agents are <service>.<name>, so the three cannot collide.
+  usernames = { for name, person in var.people : name => "platform.${name}" }
 
   writers = [for name, person in var.people : name if person.access == "write"]
 }
@@ -44,7 +44,7 @@ resource "terraform_data" "people_invariants" {
 # Database passwords
 # ------------------------------------------------------------------------------
 
-resource "random_password" "agent" {
+resource "random_password" "person" {
   for_each = var.people
 
   # 40 fits every engine: MySQL accepts at most 41 characters, DocumentDB 100.
@@ -59,7 +59,7 @@ resource "random_password" "agent" {
 # One secret per environment, always present (empty when nobody is listed, which
 # tells provisioning to remove every login):
 #
-#   { "agent_<name>": { "password": "...", "access": "read" | "write" }, ... }
+#   { "platform.<name>": { "password": "...", "access": "read" | "write" }, ... }
 #
 # The access level lives here, not in a parameter, because the provisioning
 # functions of the managed databases can reach Secrets Manager and nothing else.
@@ -82,7 +82,7 @@ resource "aws_secretsmanager_secret_version" "this" {
 
   secret_string = jsonencode({
     for name, person in var.people : local.usernames[name] => {
-      password = random_password.agent[name].result
+      password = random_password.person[name].result
       access   = person.access
     }
   })
@@ -157,7 +157,7 @@ resource "aws_cognito_user_pool_domain" "this" {
 
 # One sign-in per person. Cognito emails them a temporary password; at their
 # first sign-in they choose their own and set up their authenticator app.
-resource "aws_cognito_user" "agent" {
+resource "aws_cognito_user" "person" {
   for_each = var.front_door ? var.people : {}
 
   user_pool_id = aws_cognito_user_pool.this[0].id

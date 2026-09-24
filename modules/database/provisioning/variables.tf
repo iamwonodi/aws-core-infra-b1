@@ -52,6 +52,23 @@ variable "people_secret_arn" {
   description = "ARN of the people secret: every team member's password and access level. With it, the function brings the engine's agent_<name> logins in line with that secret on {\"action\": \"people\"} and after every service it provisions. Null: no people."
 }
 
+variable "agents_write_needs_approval" {
+  type        = bool
+  default     = false
+  description = "A service's agents (<service>.<name>) may write only if their login is in write_exceptions. On in production. Core's own platform list is not affected: it is core-approved."
+}
+
+variable "write_exceptions" {
+  type        = list(string)
+  default     = []
+  description = "Service agents' logins (<service>.<name>) that core approves to write where agents_write_needs_approval is on."
+
+  validation {
+    condition     = alltrue([for login in var.write_exceptions : can(regex("^[a-z][a-z0-9_]{1,21}\\.[a-z][a-z0-9]{1,19}$", login)) && length(login) <= 32])
+    error_message = "Each write exception is a service agent's login, <service>.<name>, at most 32 characters."
+  }
+}
+
 variable "service_secret_pattern" {
   type        = string
   default     = null

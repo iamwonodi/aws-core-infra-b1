@@ -129,9 +129,16 @@ Bootstrap formats the persistent volume only when it carries no filesystem, moun
 
 ---
 
-### The team's logins
+### People's logins
 
-`provision-people.sh` makes each running engine's `agent_<name>` logins match core's people secret (`<project>-database-people-<environment>-secret-vault`), exactly as the managed databases' provisioning functions do: groups with default privileges on PostgreSQL, direct grants on MySQL, `readAnyDatabase` / `readWriteAnyDatabase` on MongoDB. Everything read from the secret is checked against core's patterns before any of it reaches an engine. It runs through the `<project>-database-provision-people` SSM document (sent by core's apply, after refreshing the scripts) and at the end of every `provision-service.sh`, so a new service's database is covered at once. Tests: `modules/platform/host-scripts/tests/test_people.sh` (offline) and `test_people_real.sh` (real PostgreSQL and MySQL, when the provisioning function's test variables are set).
+`provision-people.sh` makes each running engine's people logins match their list, at two scopes, exactly as the managed databases' provisioning functions do:
+
+| Scope | Logins | Reach | List | Run by |
+| --- | --- | --- | --- | --- |
+| `platform` | `platform.<name>` | every service's database | core's people secret, `<project>-database-people-<environment>-secret-vault` | the `<project>-database-provision-people` SSM document (sent by core's apply, after refreshing the scripts), and after every service |
+| `service` | `<service>.<name>` | that service's database only | the `agents` entry of the service's own secret | `provision-service.sh`, whenever the service is provisioned |
+
+Access is given through each scope's groups with default privileges on PostgreSQL, direct grants on MySQL, and `read` / `readWrite` (agents) or `readAnyDatabase` / `readWriteAnyDatabase` (platform) on MongoDB. A login of the scope no longer listed is removed; which logins are the scope's is decided by an exact pattern, never by `LIKE`, where `_` in a service's name is a wildcard. Everything read from a secret is checked against core's patterns before any of it reaches an engine. Tests: `modules/platform/host-scripts/tests/test_people.sh` (offline) and `test_people_real.sh` (real PostgreSQL and MySQL, when the provisioning function's test variables are set).
 
 ## Correctness fixes made while building this module
 

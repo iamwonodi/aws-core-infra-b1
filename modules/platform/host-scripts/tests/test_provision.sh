@@ -31,9 +31,10 @@ DEPLOY_BUCKET_NAME=b
 CORE_ROOT_SECRET_ARN=arn_core
 E
   printf '%s' '{"username":"admin","root_password":"R00t-pw.1"}' > "$FAKE_ROOT/secrets/arn_core"
-  # Core's people list: provision-service.sh brings it up to date afterwards.
-  printf '%s' '{"agent_ada":{"password":"Ada-pw.0123","access":"read"}}' > "$FAKE_ROOT/secrets/core-database-people-development-secret-vault"
-  printf '%s' '{"db_name":"auth","db_user":"auth","db_password":"s3cret-pw.x"}' \
+  # Core's platform list: provision-service.sh brings it up to date afterwards.
+  printf '%s' '{"platform.ada":{"password":"Ada-pw.0123","access":"read"}}' > "$FAKE_ROOT/secrets/core-database-people-development-secret-vault"
+  # The service's secret, with one agent of its own.
+  printf '%s' '{"db_name":"auth","db_user":"auth","db_password":"s3cret-pw.x","agents":"{\"bob\":{\"password\":\"Bob-pw.0123\",\"access\":\"write\"}}"}' \
     > "$FAKE_ROOT/secrets/$(printf '%s' "$SECRET_ARN" | tr '/:' '__')"
   # An engine is running, as its own Compose project.
   echo running > "$FAKE_ROOT/compose-state/db-postgres"
@@ -55,9 +56,13 @@ echo "== provisioning a service"
 setup; request auth postgres
 run auth > "$WORK/out.txt" 2>&1; rc=$?
 check "succeeds"                                          test $rc -eq 0
-check "the standard script, then the people step's query and script" test "$(execs)" = 3
-people_step_on(){ execn "$1" | jq -r .stdin | grep -q agent_group_read && execn "$1" | jq -r '.args | join(" ")' | grep -q "container-db-$2"; }
-check "the people step runs on the same engine, after"    people_step_on 3 postgres
+# 1 the standard script; 2-3 the service's agents (a query, a script);
+# 4-6 the platform's people (two queries, a script).
+check "the standard script, then both people steps"       test "$(execs)" = 6
+script_has(){ execn "$1" | jq -r .stdin | grep -qF "$2" && execn "$1" | jq -r '.args | join(" ")' | grep -q "container-db-postgres"; }
+check "then the service's own agents, on the same engine" script_has 3 'ALTER ROLE "auth.bob"'
+check "  given only the service's database"               bash -c "execn 3 | jq -r .stdin | grep -q 'GRANT CONNECT ON DATABASE \"auth\" TO \"auth.group_read\"' && [[ \$(execn 3 | jq -r .stdin | grep -c 'GRANT CONNECT ON DATABASE') == 1 ]]"
+check "then the platform's people"                        script_has 6 'ALTER ROLE "platform.ada"'
 check "it ran against the engine's own container"         bash -c "execn 1 | jq -e '.args | index(\"container-db-postgres\") != null' >/dev/null"
 check "as the administrator (psql -U postgres)"           bash -c "execn 1 | jq -e '(.args | index(\"postgres\")) != null and (.args | index(\"psql\")) != null' >/dev/null"
 check "psql stops on the first error"                     bash -c "execn 1 | jq -e '.args | index(\"ON_ERROR_STOP=1\") != null' >/dev/null"
@@ -69,12 +74,12 @@ check "no secret value is printed"                        bash -c "! grep -q 's3
 echo "== running it again (Terraform triggers every apply)"
 before="$(execs)"; run auth >/dev/null 2>&1
 check "is still successful"                               test $? -eq 0
-check "and runs the same script and people step again"   test "$(execs)" = $((before + 3))
+check "and runs the same script and people steps again"  test "$(execs)" = $((before + 6))
 
 echo "== the service's own extra SQL"
 setup; request auth postgres; extra auth 'CREATE EXTENSION IF NOT EXISTS pg_trgm;'
 run auth >/dev/null 2>&1
-check "the standard script, the extra, then people"      test "$(execs)" = 4
+check "the standard script, the extra, then people"      test "$(execs)" = 7
 check "the extra runs as the SERVICE's user, not postgres" bash -c "execn 2 | jq -e '(.args | index(\"auth\")) != null and (.args | index(\"postgres\") == null)' >/dev/null"
 check "on the service's own database"                     bash -c "execn 2 | jq -e '.args | index(\"-d\") != null' >/dev/null"
 check "with the service's password, never root's"         bash -c "execn 2 | jq -r '.args | join(\" \")' | grep -q 's3cret-pw.x' && ! execn 2 | jq -r '.args | join(\" \")' | grep -q 'R00t-pw.1'"

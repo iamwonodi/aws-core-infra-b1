@@ -40,17 +40,17 @@ check "succeeds"                                         test ${rc} -eq 0
 check "asks each function for people only"               bash -c "[[ \$(grep -c 'lambda invoke' '${FAKE_AWS}/calls.log') == 2 ]] && grep -qF -- '--payload {\"action\":\"people\"}' '${FAKE_AWS}/calls.log'"
 check "checks an RDS instance's state"                   called "rds describe-db-instances --db-instance-identifier core-staging-postgres"
 check "and a DocumentDB cluster's"                       called "docdb describe-db-clusters --db-cluster-identifier core-staging-mongodb"
-check "reports who is provisioned"                       said "people: agent_ada"
+check "reports who is provisioned"                       said "people: platform.ada"
 reset; spec "${MANAGED}"; echo stopped > "${FAKE_AWS}/db-status/core-staging-postgres"
 run; rc=$?
 check "a stopped database is skipped, not a failure"     test ${rc} -eq 0
 check "  its function is not called"                     not called "core-staging-postgres-provision"
 check "  the other engine still is"                      called "core-staging-mongodb-provision"
 check "  and the skip is said plainly"                   said 'Run the "Provision people" workflow once it is available'
-reset; spec "${MANAGED}"; echo '{"FunctionError":"Unhandled","errorMessage":"agent_x is not agent_<name>"}' > "${FAKE_AWS}/lambda/core-staging-mongodb-provision.json"
+reset; spec "${MANAGED}"; echo '{"FunctionError":"Unhandled","errorMessage":"platform.x is not a name"}' > "${FAKE_AWS}/lambda/core-staging-mongodb-provision.json"
 run; rc=$?
 check "a function error fails the step"                  test ${rc} -ne 0
-check "  with the function's message"                    said "agent_x is not agent_<name>"
+check "  with the function's message"                    said "platform.x is not a name"
 check "  after trying every engine"                      called "core-staging-postgres-provision"
 reset; spec '{"kind":"managed","engines":{}}'
 run; rc=$?

@@ -12,7 +12,7 @@ A service has **two repositories with different jobs**, so it gets **two entries
 | Field | Required | Meaning |
 | --- | --- | --- |
 | key | yes | The repository, `OWNER/REPOSITORY` |
-| `service_name` | yes | Lowercase letters, digits and hyphens, 3-22 characters. Both of a service's entries use the same one. It names the service's ECR repository, secret, target group and S3 prefixes, so it must be unique. The names `database`, `database-hub`, `fleet`, `internal`, `platform`, `private` and `services`, and any name beginning `database-` or `agent-`, are reserved |
+| `service_name` | yes | Lowercase letters, digits and hyphens, 3-22 characters. Both of a service's entries use the same one. It names the service's ECR repository, secret, target group and S3 prefixes, so it must be unique. The names `database`, `database-hub`, `fleet`, `internal`, `platform`, `private` and `services`, and any name beginning `database-`, are reserved |
 | `kind` | yes | `infra` or `app` |
 | `tier` | yes | `private` or `internal`: which ALB and subnets the service uses. Both entries of a service must agree |
 | `owner_id`, `repository_id` | when the subject format is `immutable` (the default) | The numeric GitHub IDs of the owner and of **that** repository |
@@ -36,18 +36,22 @@ Services here run on the shared tier fleets, so no IAM is granted to any service
 
 # people.json
 
-The team members who use the team tools (the database GUIs). **It ships empty (`{}`)**; `people.example.json` shows the shape.
+**The platform list**: you and anyone you trust platform-wide. Each person gets a login on **every service's database**. **It ships empty (`{}`)**; `people.example.json` shows the shape.
+
+A service team's own members are not listed here: each service declares its **agents** in its own repository, and an agent's login (`<service>.<name>`) reaches only that service's database.
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| key | yes | A short name: 2-20 lowercase letters and digits, starting with a letter. Their database user is `agent_<name>`, on every engine |
+| key | yes | A short name: 2-20 lowercase letters and digits, starting with a letter. Their login is `platform.<name>`, on every engine |
 | `email` | yes | Their sign-in, and where their invitation goes. Unique |
-| `access` | yes | `read` (look at and query data) or `write` (also add, change and delete rows and documents). Neither can change tables or indexes: that is the services' migrations' job |
+| `access` | yes | `read` (look at and query data) or `write` (also add, change and delete rows). Neither can change tables: that is the services' migrations' job |
 
-**Adding someone:** add their entry and apply. Their database password is generated and kept, with everyone else's, in the secret `<project>-database-people-development-secret-vault` under `agent_<name>`, with their access level. Only administrators read it: open it in the console and hand the person their own password over a private channel. Cognito emails the person a temporary password (from `no-reply@verificationemail.com`). At their first sign-in to a tool's web address they choose their own password and set up an authenticator app, which every sign-in then requires.
+**Adding someone:** add their entry and apply. Their database password is generated and kept, with everyone else's on this list, in the secret `<project>-database-people-development-secret-vault` under `platform.<name>`, with their access level. Only administrators read it: open it in the console and hand the person their own password over a private channel. Cognito emails them a temporary password (from `no-reply@verificationemail.com`). At their first sign-in to a tool's web address they choose their own password and set up an authenticator app, which every sign-in then requires.
 
-**Removing someone:** delete their entry and apply. Their sign-in and their password go at once.
+**Removing someone:** delete their entry and apply. Their sign-in and their password go at once, and their logins at the end of the apply.
 
-**When the logins change on the databases:** at the end of every apply, the workflow's *Provision People* step creates, updates and removes the `agent_` logins on every engine to match this file (and every service provisioned afterwards is covered at once). The **Provision people** workflow runs that step on its own.
+**When the logins change on the databases:** at the end of every apply, the workflow's *Provision People* step creates, updates and removes the `platform.` logins on every engine to match this file; a service provisioned afterwards is covered at once. The **Provision people** workflow runs that step on its own.
 
-**A new database password for someone:** `terraform apply -replace='module.people.random_password.agent["<name>"]'`.
+**A new database password for someone:** `terraform apply -replace='module.people.random_password.person["<name>"]'`.
+
+**Emergencies:** each engine's administrator login (`platformadmin`, or the database host's root) can do everything. Keep it for when nothing else will do: its actions are not traceable to a person.

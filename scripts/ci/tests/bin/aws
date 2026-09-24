@@ -36,7 +36,7 @@ if args[:2] == ["docdb", "describe-db-clusters"]:
     print(read("db-status/" + opt("--db-cluster-identifier"), "available")); sys.exit(0)
 if args[:2] == ["lambda", "invoke"]:
     function = opt("--function-name")
-    reply = json.loads(read("lambda/" + function + ".json", '{"status": "people provisioned", "people": ["agent_ada"], "removed": []}'))
+    reply = json.loads(read("lambda/" + function + ".json", '{"status": "people provisioned", "people": ["platform.ada"], "removed": []}'))
     error = reply.pop("FunctionError", None)
     open(args[-1], "w").write(json.dumps(reply))
     meta = {"StatusCode": 200}

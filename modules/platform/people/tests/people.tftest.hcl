@@ -19,21 +19,21 @@ variables {
   front_door = true
 }
 
-run "each_person_gets_an_agent_login_and_a_sign_in" {
+run "each_person_gets_a_platform_login_and_a_sign_in" {
   command = plan
 
   assert {
-    condition     = output.usernames == { ada = "agent_ada", tunde = "agent_tunde" }
-    error_message = "each person's database user is agent_<name>"
+    condition     = output.usernames == { ada = "platform.ada", tunde = "platform.tunde" }
+    error_message = "each person's database login is platform.<name>"
   }
 
   assert {
-    condition     = output.access == { agent_ada = "write", agent_tunde = "read" }
+    condition     = output.access == { "platform.ada" = "write", "platform.tunde" = "read" }
     error_message = "each login carries its person's access level"
   }
 
   assert {
-    condition     = length(random_password.agent) == 2 && random_password.agent["ada"].length == 40 && random_password.agent["ada"].override_special == "-_."
+    condition     = length(random_password.person) == 2 && random_password.person["ada"].length == 40 && random_password.person["ada"].override_special == "-_."
     error_message = "one password per person, in the platform's alphabet"
   }
 
@@ -43,7 +43,7 @@ run "each_person_gets_an_agent_login_and_a_sign_in" {
   }
 
   assert {
-    condition     = aws_cognito_user.agent["ada"].username == "ada@example.org" && aws_cognito_user.agent["ada"].attributes.email_verified == "true"
+    condition     = aws_cognito_user.person["ada"].username == "ada@example.org" && aws_cognito_user.person["ada"].attributes.email_verified == "true"
     error_message = "a person signs in with their email, stored in lower case"
   }
 }
@@ -90,12 +90,12 @@ run "production_has_no_front_door" {
   }
 
   assert {
-    condition     = length(aws_cognito_user_pool.this) == 0 && length(aws_cognito_user.agent) == 0 && output.front_door == null
+    condition     = length(aws_cognito_user_pool.this) == 0 && length(aws_cognito_user.person) == 0 && output.front_door == null
     error_message = "without a front door there is no user pool and no sign-in"
   }
 
   assert {
-    condition     = output.usernames == { tunde = "agent_tunde" } && aws_secretsmanager_secret.this.name == "acme-database-people-production-secret-vault"
+    condition     = output.usernames == { tunde = "platform.tunde" } && aws_secretsmanager_secret.this.name == "acme-database-people-production-secret-vault"
     error_message = "people still get a database login and a password"
   }
 }
@@ -118,7 +118,7 @@ run "nobody_listed_keeps_an_empty_secret" {
   }
 
   assert {
-    condition     = aws_secretsmanager_secret_version.this.secret_string == "{}" && length(aws_cognito_user.agent) == 0
+    condition     = aws_secretsmanager_secret_version.this.secret_string == "{}" && length(aws_cognito_user.person) == 0
     error_message = "with nobody listed the secret is empty, which tells provisioning to remove every login, and there is no sign-in (the pool itself remains)"
   }
 }

@@ -1,5 +1,5 @@
 output "usernames" {
-  description = "Each person's database user, by name: agent_<name>."
+  description = "Each person's database user, by name: platform.<name>."
   value       = local.usernames
 }
 

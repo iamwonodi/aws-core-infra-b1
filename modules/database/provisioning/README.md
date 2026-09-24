@@ -34,7 +34,7 @@ The payload is **one of two** things:
 { "action": "people" }
 ```
 
-The second brings the team's logins (`agent_<name>`) on this engine in line with core's people secret; see *People* below.
+The second brings the platform list's logins (`platform.<name>`) on this engine in line with core's people secret; see *People* below.
 
 The function derives the service's secret name from its own pattern, so a caller **cannot** point it at another service's credential, and it runs **no SQL the caller supplies**. Every other field in the payload is ignored.
 
@@ -48,19 +48,26 @@ A service's infrastructure role is granted `lambda:InvokeFunction` on exactly th
 
 It runs on every apply of the service, so every step is conditional.
 
-After a service is provisioned, the people step below runs too, so the team's logins reach the new database at once.
+After a service is provisioned, its own agents are provisioned, then the platform list, so both reach the new database at once; see *People* below.
 
 ## People
 
-With `people_secret_arn` set, the function reads `{ "agent_<name>": { "password", "access" } }` from that secret and makes the engine match it exactly: every listed person gets a login with that password and, on **every service's database**, `read` (look at and query data) or `write` (also add, change and delete rows). Neither can change tables. An `agent_` login no longer listed is **removed**. Nothing in the payload can add a person or change an access level: only the secret decides.
+People's logins are `<scope>.<name>`, at two scopes. Each run makes the engine's logins of that scope match its list exactly: a listed person gets a login with that password and `read` (look at and query data) or `write` (also add, change and delete rows); neither can change tables. A login of the scope no longer listed is **removed**; which logins are the scope's is decided by an exact pattern, never by `LIKE`. Nothing in the payload can add a person or change an access level: only the secrets decide.
+
+| Scope | Logins | Reach | List | When |
+| --- | --- | --- | --- | --- |
+| service | `<service>.<name>` | that service's database only | the `agents` entry of the service's own secret: a JSON object `{ "<name>": { "password", "access" } }` | whenever the service is provisioned |
+| platform | `platform.<name>` | every service's database | `people_secret_arn`: `{ "platform.<name>": { "password", "access" } }` | `{"action": "people"}` after core's apply, and after every service is provisioned |
 
 | Engine | How access is given |
 | --- | --- |
-| PostgreSQL | Groups `agent_group_read` and `agent_group_write`, granted on each service's database (found as a database owned by a role of its own name), with default privileges so tables the service creates later are covered |
-| MySQL | Grants on each service's database (a database with a user of its own name), given to each person, underscores escaped; revoked and granted again on each run, so a change from write to read leaves nothing behind. Direct grants need only the master user's `WITH GRANT OPTION`; granting a role would need `ROLE_ADMIN` |
-| MongoDB (DocumentDB) | `readAnyDatabase` or `readWriteAnyDatabase` on `admin` |
+| PostgreSQL | The scope's groups, `<scope>.group_read` and `<scope>.group_write`, granted on its databases (every service's database is found as one owned by a role of its own name), with default privileges so tables the service creates later are covered |
+| MySQL | Grants on the scope's databases (a service's database has a user of its own name), given to each person, underscores escaped; revoked and granted again on each run, so a change from write to read leaves nothing behind. Direct grants need only the master user's `WITH GRANT OPTION`; granting a role would need `ROLE_ADMIN` |
+| MongoDB (DocumentDB) | Agents: `read` or `readWrite` on the service's database. Platform: `readAnyDatabase` or `readWriteAnyDatabase` on `admin` |
 
-Core's apply invokes `{"action": "people"}` on every engine after applying (`scripts/ci/provision-people.sh`).
+**Production:** with `agents_write_needs_approval`, an agent may write only if its login is in `write_exceptions` (core's `data/agent-write-exceptions.json`). A service asking for unapproved write fails its provisioning, before anything is changed. The platform list is not affected: it is core-approved.
+
+Logins are at most 32 characters (MySQL's limit, held on every engine).
 
 ## Things that will bite you
 
@@ -90,7 +97,9 @@ Placing a function in a VPC needs `ec2:CreateNetworkInterface` and its companion
 | `admin_secret_arn` | — | the administrator credential |
 | `admin_database` | `postgres` | connected to before a service's database exists (core uses `platform` on MySQL, `admin` on DocumentDB) |
 | `service_secret_pattern` | `<project>-{service}-<environment>-secret-vault` | how a service's secret is named |
-| `people_secret_arn` | `null` | core's people secret; without it the function provisions services only and refuses `{"action": "people"}` |
+| `people_secret_arn` | `null` | core's people secret (the platform list); without it the function provisions services and their agents only, and refuses `{"action": "people"}` |
+| `agents_write_needs_approval` | `false` | a service's agents write only if listed in `write_exceptions` (on in production) |
+| `write_exceptions` | `[]` | agent logins, `<service>.<name>`, core approves to write |
 | `vpc_id`, `subnet_ids` | — | the same isolated subnets as the database |
 | `log_retention_days` | `30` | |
 | `timeout_seconds` | `60` | |

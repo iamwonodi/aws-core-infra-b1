@@ -12,7 +12,7 @@ A service has **two repositories with different jobs**, so it gets **two entries
 | Field | Required | Meaning |
 | --- | --- | --- |
 | key | yes | The repository, `OWNER/REPOSITORY` |
-| `service_name` | yes | Lowercase letters, digits and hyphens, 3-22 characters. Both of a service's entries use the same one. It names the service's ECR repository, secret, target group and S3 prefixes, so it must be unique. The names `database`, `database-hub`, `fleet`, `internal`, `platform`, `private` and `services`, and any name beginning `database-` or `agent-`, are reserved |
+| `service_name` | yes | Lowercase letters, digits and hyphens, 3-22 characters. Both of a service's entries use the same one. It names the service's ECR repository, secret, target group and S3 prefixes, so it must be unique. The names `database`, `database-hub`, `fleet`, `internal`, `platform`, `private` and `services`, and any name beginning `database-`, are reserved |
 | `kind` | yes | `infra` or `app` |
 | `tier` | yes | `private` or `internal`: which ALB and subnets the service uses. Both entries of a service must agree |
 | `owner_id`, `repository_id` | when the subject format is `immutable` (the default) | The numeric GitHub IDs of the owner and of **that** repository |
@@ -36,18 +36,28 @@ Services here are **dedicated**: each service creates its own launch template, A
 
 # people.json
 
-The team members who use the team tools (the database GUIs). **It ships empty (`{}`)**; `people.example.json` shows the shape.
+**The platform list**: you and anyone you trust platform-wide. Each person gets a login on **every service's database**. **It ships empty (`{}`)**; `people.example.json` shows the shape.
+
+A service team's own members are not listed here: each service declares its **agents** in its own repository, and an agent's login (`<service>.<name>`) reaches only that service's database.
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| key | yes | A short name: 2-20 lowercase letters and digits, starting with a letter. Their database user is `agent_<name>`, on every engine |
+| key | yes | A short name: 2-20 lowercase letters and digits, starting with a letter. Their login is `platform.<name>`, on every engine |
 | `email` | yes | Their sign-in, and where their invitation goes. Unique |
-| `access` | yes | `read` only: production is read-only for everyone, and `write` fails the plan |
+| `access` | yes | `read` (look at and query data) or `write` (also add, change and delete rows). `write` is allowed here because this list is itself approved by core's production review. Neither can change tables: that is the services' migrations' job |
 
-**Adding someone:** add their entry and apply. Their database password is generated and kept, with everyone else's, in the secret `<project>-database-people-production-secret-vault` under `agent_<name>`, with their access level. Only administrators read it: open it in the console and hand the person their own password over a private channel. Production has no front door: its tools are reached only through a private tunnel, opened with an AWS sign-in (IAM Identity Center).
+**Adding someone:** add their entry and apply. Their database password is generated and kept, with everyone else's on this list, in the secret `<project>-database-people-production-secret-vault` under `platform.<name>`, with their access level. Only administrators read it: open it in the console and hand the person their own password over a private channel. Production has no front door: its tools are reached only through a private tunnel, opened with an AWS sign-in (IAM Identity Center).
 
-**Removing someone:** delete their entry and apply. Their sign-in and their password go at once.
+**Removing someone:** delete their entry and apply. Their sign-in and their password go at once, and their logins at the end of the apply.
 
-**When the logins change on the databases:** at the end of every apply, the workflow's *Provision People* step creates, updates and removes the `agent_` logins on every engine to match this file (and every service provisioned afterwards is covered at once). The **Provision people** workflow runs that step on its own.
+**When the logins change on the databases:** at the end of every apply, the workflow's *Provision People* step creates, updates and removes the `platform.` logins on every engine to match this file; a service provisioned afterwards is covered at once. The **Provision people** workflow runs that step on its own.
 
-**A new database password for someone:** `terraform apply -replace='module.people.random_password.agent["<name>"]'`.
+**A new database password for someone:** `terraform apply -replace='module.people.random_password.person["<name>"]'`.
+
+**Emergencies:** each engine's administrator login (`platformadmin`, or the database host's root) can do everything. Keep it for when nothing else will do: its actions are not traceable to a person.
+
+# agent-write-exceptions.json
+
+A service's agents are read-only in production unless core approves them here. **It ships empty (`[]`)**; `agent-write-exceptions.example.json` shows the shape: a list of agent logins, `"<service>.<name>"`.
+
+A service that asks for `write` in production for an agent not listed here fails its provisioning, with a message naming the agent and this file. Adding a line goes through core's production review.

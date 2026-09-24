@@ -152,9 +152,15 @@ merge  ->  semantic-release tags vX.Y.Z  ->  image built  ->  development deploy
 
 ---
 
-## People (the team's database logins)
+## People (database logins)
 
-Add team members to `infrastructure/<env>/data/people.json` (see that folder's `README.md`) and apply. The apply's last step, *Provision People*, creates their `agent_<name>` logins on every engine. If it was skipped (staging's databases stopped) or failed, run the **Provision people** workflow for that environment. Each person's password is in `<project>-database-people-<env>-secret-vault`; hand it over privately.
+Three levels, each traceable to a person except the last:
+
+- **A service's agents** (`<service>.<name>`, that service's database only): declared in the service's own repository and created whenever it is provisioned. Their passwords are in the service's own secret; the service team hands them over.
+- **The platform list** (`platform.<name>`, every service's database): `infrastructure/<env>/data/people.json` in core (see that folder's `README.md`). The apply's last step, *Provision People*, creates the logins; if it was skipped (staging's databases stopped) or failed, run the **Provision people** workflow for that environment. Passwords are in `<project>-database-people-<env>-secret-vault`; hand them over privately.
+- **Each engine's administrator**, for emergencies only.
+
+In production a service's agents are read-only unless listed in `infrastructure/production/data/agent-write-exceptions.json`.
 
 ## If it stops
 

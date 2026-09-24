@@ -297,9 +297,12 @@ module "database" {
 ################################################################################
 # PEOPLE
 #
-# The team members who use the team tools, from data/people.json (ships empty;
-# see data/README.md). Each gets a database login, agent_<name>, whose password
-# is kept in one secret that only administrators read and hand over.
+# The platform list: you and anyone trusted platform-wide, from data/people.json
+# (ships empty; see data/README.md). Each gets a login on EVERY service's
+# database, platform.<name>, read or write; the passwords are kept in one secret
+# that only administrators read and hand over. A service's own agents are that
+# service's business: they are declared in its repository and reach only its
+# database.
 # Development's tools have web addresses behind the front door; people may read or write.
 ################################################################################
 

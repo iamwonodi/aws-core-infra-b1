@@ -103,6 +103,7 @@ resource "aws_lambda_function" "this" {
         SERVICE_SECRET_PATTERN = local.service_secret_pattern
       },
       var.people_secret_arn == null ? {} : { PEOPLE_SECRET_ARN = var.people_secret_arn },
+      var.agents_write_needs_approval ? { AGENT_WRITE = "approved", WRITE_EXCEPTIONS = join(",", var.write_exceptions) } : {},
     )
   }
 

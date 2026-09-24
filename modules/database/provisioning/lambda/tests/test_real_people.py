@@ -1,10 +1,17 @@
-"""People's logins (agent_<name>) against REAL PostgreSQL and MySQL servers.
+"""People's logins against REAL PostgreSQL and MySQL servers, at both scopes.
+
+    platform.<name>   core's platform list: every service's database
+    <service>.<name>  a service's agents: that service's database only
 
 What a person can actually do is the point, so every assertion connects AS that
-person and tries: read, write, create a table, reach a database that is not a
-service's. The administrator has only what RDS gives its master user: on
-PostgreSQL a non-superuser with CREATEDB and CREATEROLE, on MySQL every
+person and tries: read, write, create a table, reach another service's database,
+sign in after removal. The administrator has only what RDS gives its master
+user: on PostgreSQL a non-superuser with CREATEDB and CREATEROLE, on MySQL every
 privilege WITH GRANT OPTION but no SUPER and no ROLE_ADMIN.
+
+Two services are named so that one's name, read as a LIKE pattern, matches the
+other's (a_c and axc differ only where "_" is a wildcard): removing the first's
+agents must never reach the second's.
 
 Connections go through the function's own connect functions, so they are TLS,
 verified against PROVISION_TEST_TLS_CA. Runs only when the servers are given:
@@ -32,13 +39,100 @@ CA = os.environ.get("PROVISION_TEST_TLS_CA")
 PG_HOST = os.environ.get("PROVISION_TEST_PG_HOST")
 MYSQL_HOST = os.environ.get("PROVISION_TEST_MYSQL_HOST")
 
-PASSWORD_ADA = "Ada-pw.0123456789abcdef"
-PASSWORD_TUNDE = "Tunde-pw.0123456789abcdef"
+PW = {"ada": "Ada-pw.0123456789abc", "tunde": "Tunde-pw.0123456789", "bob": "Bob-pw.0123456789ab"}
+SVC_PW = "Svc-pw.x"
 
 
 def load():
     os.environ.update(DATABASE_HOST="x", DATABASE_PORT="0", ADMIN_SECRET_ARN="x", SERVICE_SECRET_PATTERN="x", CA_BUNDLE=CA)
+    os.environ.pop("AGENT_WRITE", None)
     return importlib.reload(importlib.import_module("provision"))
+
+
+def listed(scope, **access):
+    return {f"{scope}.{name}": {"password": PW[name], "access": level} for name, level in access.items()}
+
+
+class Scenarios:
+    """The same scenarios for each engine. Subclasses give connections and the calls."""
+
+    def test_1_platform_people_reach_every_service_database(self):
+        self.platform(ada="write", tunde="read")
+        one, two = self.services[0], self.services[1]
+        self.assertTrue(self.can("platform.tunde", PW["tunde"], one, "SELECT v FROM before_people"), "read reads")
+        self.assertFalse(self.can("platform.tunde", PW["tunde"], one, "INSERT INTO before_people (id, v) VALUES (1000, 'x')"), "read cannot insert")
+        self.assertFalse(self.can("platform.tunde", PW["tunde"], one, "DELETE FROM before_people"), "read cannot delete")
+        self.assertTrue(self.can("platform.ada", PW["ada"], one, "INSERT INTO before_people (v) VALUES ('ada')"), "write inserts")
+        self.assertTrue(self.can("platform.ada", PW["ada"], one, "DELETE FROM before_people WHERE v = 'ada'"), "write deletes")
+        self.assertTrue(self.can("platform.tunde", PW["tunde"], two, "SELECT 1"), "every service's database")
+        self.assertFalse(self.can("platform.ada", PW["ada"], one, "CREATE TABLE mine (v INT)"), "nobody creates tables")
+
+    def test_2_a_services_agents_reach_that_service_only(self):
+        one, two = self.services[0], self.services[1]
+        self.agents(one, ada="write", bob="read")
+        self.agents(two, ada="read")
+        self.assertTrue(self.can(f"{one}.ada", PW["ada"], one, "INSERT INTO before_people (v) VALUES ('a1')"), "write on its own service")
+        self.assertTrue(self.can(f"{one}.bob", PW["bob"], one, "SELECT v FROM before_people"), "read on its own service")
+        self.assertFalse(self.can(f"{one}.bob", PW["bob"], one, "INSERT INTO before_people (id, v) VALUES (1001, 'x')"), "read cannot write")
+        self.assertFalse(self.can(f"{one}.ada", PW["ada"], two, "SELECT 1"), "an agent never reaches another service's database")
+        self.assertFalse(self.can(f"{two}.ada", PW["ada"], one, "SELECT 1"), "nor the other way round")
+        self.assertFalse(self.can(f"{one}.ada", PW["ada"], one, "CREATE TABLE mine (v INT)"), "agents create no tables")
+
+    def test_3_tables_created_later_are_covered_at_both_scopes(self):
+        one = self.services[0]
+        self.platform(tunde="read")
+        self.agents(one, bob="read", ada="write")
+        self.as_service(one, "CREATE TABLE IF NOT EXISTS after_people (id INT PRIMARY KEY, v VARCHAR(20))")
+        self.assertTrue(self.can("platform.tunde", PW["tunde"], one, "SELECT * FROM after_people"), "platform, a later table")
+        self.assertTrue(self.can(f"{one}.bob", PW["bob"], one, "SELECT * FROM after_people"), "agent, a later table")
+        self.assertTrue(self.can(f"{one}.ada", PW["ada"], one, "INSERT INTO after_people (id, v) VALUES (1, 'x')"), "and writing it")
+
+    def test_4_changing_access_and_removing_take_effect(self):
+        one = self.services[0]
+        self.agents(one, ada="write", bob="read")
+        self.agents(one, ada="read")
+        self.assertFalse(self.can(f"{one}.ada", PW["ada"], one, "INSERT INTO before_people (id, v) VALUES (1002, 'x')"), "write -> read")
+        self.assertFalse(self.can(f"{one}.bob", PW["bob"], one, "SELECT 1"), "a removed agent cannot sign in")
+        self.platform(ada="write", tunde="read")
+        self.platform(ada="write")
+        self.assertFalse(self.can("platform.tunde", PW["tunde"], one, "SELECT 1"), "a removed platform person cannot sign in")
+        self.assertTrue(self.can("platform.ada", PW["ada"], one, "SELECT 1"), "the others stay")
+
+    def test_5_scopes_never_touch_each_other(self):
+        one, two = self.services[0], self.services[1]
+        self.agents(one, ada="read")
+        self.agents(two, ada="read")
+        self.platform(ada="read")
+        removed = self.agents(one)  # nobody left in one
+        self.assertEqual(removed, [f"{one}.ada"])
+        self.assertTrue(self.can(f"{two}.ada", PW["ada"], two, "SELECT 1"), "another service's agent stays")
+        self.assertTrue(self.can("platform.ada", PW["ada"], one, "SELECT 1"), "the platform's person stays")
+        self.platform()  # nobody on the platform list
+        self.assertTrue(self.can(f"{two}.ada", PW["ada"], two, "SELECT 1"), "emptying the platform list leaves agents alone")
+
+    def test_6_a_wildcard_name_does_not_reach_a_lookalike_service(self):
+        # a_c read as a LIKE pattern matches axc: "_" is a wildcard.
+        lookalike, other = self.services[2], self.services[3]
+        self.agents(other, ada="read")
+        self.agents(lookalike, ada="read")
+        removed = self.agents(lookalike)
+        self.assertEqual(removed, [f"{lookalike}.ada"])
+        self.assertTrue(self.can(f"{other}.ada", PW["ada"], other, "SELECT 1"), f"{other}.ada must survive {lookalike}'s removal")
+        # And the wildcard's own grant: the a_c agent's grant on `a_c`.* would, unescaped, cover axc too.
+        self.agents(lookalike, ada="read")
+        self.assertFalse(self.can(f"{lookalike}.ada", PW["ada"], other, "SELECT 1"), f"{lookalike}.ada must never reach {other}'s database")
+
+    def test_7_running_again_changes_nothing(self):
+        one = self.services[0]
+        self.agents(one, ada="write")
+        self.assertEqual(self.agents(one, ada="write"), [])
+        self.assertTrue(self.can(f"{one}.ada", PW["ada"], one, "SELECT 1"))
+
+    def test_8_the_services_own_user_is_untouched(self):
+        one = self.services[0]
+        self.agents(one, ada="write")
+        self.platform(ada="write")
+        self.as_service(one, "CREATE TABLE svc_still_owns (v INT)")
 
 
 # ------------------------------------------------------------------------------
@@ -47,53 +141,47 @@ def load():
 
 
 @unittest.skipUnless(PG_HOST and CA, "set PROVISION_TEST_PG_HOST and PROVISION_TEST_TLS_CA to run against a real PostgreSQL")
-class RealPostgresPeople(unittest.TestCase):
+class RealPostgresPeople(Scenarios, unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.prov = load()
         cls.port = int(os.environ.get("PROVISION_TEST_PG_PORT", "5432"))
-        cls.suffix = uuid.uuid4().hex[:6]
-        cls.admin = f"pp_admin_{cls.suffix}"
-        cls.admin_password = "Adm1n-pw.x"
-        cls.services = [f"pp_one_{cls.suffix}", f"pp_two_{cls.suffix}"]
-        cls.ada, cls.tunde = f"agent_ada{cls.suffix}", f"agent_tunde{cls.suffix}"
-
-        with cls.superuser("postgres") as c:
-            c.cursor().execute(
-                f"CREATE ROLE \"{cls.admin}\" LOGIN NOSUPERUSER CREATEDB CREATEROLE PASSWORD '{cls.admin_password}'"
-            )
-
-        # Two services, provisioned by the function; one already has a table
-        # (created before people are provisioned), holding a row.
+        s = uuid.uuid4().hex[:6]
+        cls.admin, cls.admin_password = f"pp_admin_{s}", "Adm1n-pw.x"
+        # one, two, and a pair where the first is a LIKE pattern matching the second
+        cls.services = [f"pp_one_{s}", f"pp_two_{s}", f"pa_c{s}", f"paxc{s}"]
+        with cls.superuser() as c:
+            c.cursor().execute(f"CREATE ROLE \"{cls.admin}\" LOGIN NOSUPERUSER CREATEDB CREATEROLE PASSWORD '{cls.admin_password}'")
         for service in cls.services:
-            cls.provision_service(service)
-        with cls.connect(cls.services[0], cls.services[0], "Svc-pw.x") as c:
+            with cls.connect("postgres", cls.admin, cls.admin_password) as c:
+                cls.prov.provision(c, service, service, SVC_PW, cls.admin)
+            with cls.connect(service, cls.admin, cls.admin_password) as c:
+                cls.prov.provision_schema(c, service, cls.admin)
+        with cls.connect(cls.services[0], cls.services[0], SVC_PW) as c:
             cur = c.cursor()
             cur.execute("CREATE TABLE before_people (id serial PRIMARY KEY, v text)")
             cur.execute("INSERT INTO before_people (v) VALUES ('seed')")
 
     @classmethod
     def tearDownClass(cls):
-        with cls.superuser("postgres") as c:
+        with cls.superuser() as c:
             cur = c.cursor()
-            for database in cls.services + [f"pp_three_{cls.suffix}"]:
+            for database in cls.services:
                 cur.execute(f'DROP DATABASE IF EXISTS "{database}" WITH (FORCE)')
-            for role in [cls.ada, cls.tunde] + cls.services + [f"pp_three_{cls.suffix}"]:
+            cur.execute("SELECT rolname FROM pg_roles WHERE rolname LIKE 'platform.%' OR rolname LIKE %s OR rolname LIKE %s OR rolname LIKE %s",
+                        (f"pp\\_%{cls.services[0][-6:]}.%", f"pa\\_c{cls.services[0][-6:]}.%", f"paxc{cls.services[0][-6:]}.%"))
+            for (role,) in cur.fetchall():
                 cur.execute(f'DROP ROLE IF EXISTS "{role}"')
-            # The groups hold default privileges only inside the dropped
-            # databases, so they drop cleanly now; the administrator last.
-            for role in ("agent_group_read", "agent_group_write", cls.admin):
+            for role in cls.services + [cls.admin]:
                 cur.execute(f'DROP ROLE IF EXISTS "{role}"')
-
-    # --- connections -------------------------------------------------------
 
     @classmethod
-    def superuser(cls, database):
+    def superuser(cls):
         import pg8000.dbapi
 
         class Session:
             def __enter__(self):
-                self.c = pg8000.dbapi.connect(host=PG_HOST, port=cls.port, database=database,
+                self.c = pg8000.dbapi.connect(host=PG_HOST, port=cls.port, database="postgres",
                                               user=os.environ["PROVISION_TEST_PG_SUPERUSER"],
                                               password=os.environ["PROVISION_TEST_PG_SUPERPASSWORD"], timeout=10)
                 self.c.autocommit = True
@@ -116,21 +204,18 @@ class RealPostgresPeople(unittest.TestCase):
 
         return Session()
 
-    @classmethod
-    def provision_service(cls, name):
-        with cls.connect("postgres", cls.admin, cls.admin_password) as c:
-            cls.prov.provision(c, name, name, "Svc-pw.x", cls.admin)
-        with cls.connect(name, cls.admin, cls.admin_password) as c:
-            cls.prov.provision_schema(c, name, cls.admin)
+    def platform(self, **access):
+        self.prov.provision_scope_postgres(PG_HOST, self.port, self.admin, self.admin_password, "postgres",
+                                           "platform", listed("platform", **access))
 
-    def provision_people(self, people):
-        return self.prov.provision_people_postgres(PG_HOST, self.port, self.admin, self.admin_password, "postgres", people)
+    def agents(self, service, **access):
+        _, removed = self.prov.provision_scope_postgres(PG_HOST, self.port, self.admin, self.admin_password, "postgres",
+                                                        service, listed(service, **access), [service])
+        return removed
 
-    def people(self, ada="write", tunde="read", with_tunde=True):
-        people = {self.ada: {"password": PASSWORD_ADA, "access": ada}}
-        if with_tunde:
-            people[self.tunde] = {"password": PASSWORD_TUNDE, "access": tunde}
-        return people
+    def as_service(self, service, statement):
+        with self.connect(service, service, SVC_PW) as c:
+            c.cursor().execute(statement)
 
     def can(self, user, password, database, statement):
         try:
@@ -140,76 +225,6 @@ class RealPostgresPeople(unittest.TestCase):
         except Exception:
             return False
 
-    # --- tests -------------------------------------------------------------
-
-    def test_1_read_and_write_on_every_service_database(self):
-        databases, removed = self.provision_people(self.people())
-        self.assertEqual(sorted(databases), sorted(self.services))
-        self.assertEqual(removed, [])
-
-        one = self.services[0]
-        self.assertTrue(self.can(self.tunde, PASSWORD_TUNDE, one, "SELECT v FROM before_people"), "read can read an existing table")
-        # An explicit id, so the insert needs only the table privilege and not the
-        # sequence's: a missing sequence grant must not hide a wrong table grant.
-        self.assertFalse(self.can(self.tunde, PASSWORD_TUNDE, one, "INSERT INTO before_people (id, v) VALUES (1000, 'x')"), "read cannot write")
-        self.assertFalse(self.can(self.tunde, PASSWORD_TUNDE, one, "UPDATE before_people SET v = 'x'"), "read cannot update")
-        self.assertFalse(self.can(self.tunde, PASSWORD_TUNDE, one, "DELETE FROM before_people"), "read cannot delete")
-        self.assertTrue(self.can(self.ada, PASSWORD_ADA, one, "INSERT INTO before_people (v) VALUES ('ada')"), "write can insert, sequence included")
-        self.assertTrue(self.can(self.ada, PASSWORD_ADA, one, "UPDATE before_people SET v = 'u' WHERE v = 'ada'"), "write can update")
-        self.assertTrue(self.can(self.ada, PASSWORD_ADA, one, "DELETE FROM before_people WHERE v = 'u'"), "write can delete")
-        self.assertTrue(self.can(self.tunde, PASSWORD_TUNDE, self.services[1], "SELECT 1"), "every service's database, not just one")
-
-    def test_2_nobody_changes_tables(self):
-        self.provision_people(self.people())
-        one = self.services[0]
-        self.assertFalse(self.can(self.ada, PASSWORD_ADA, one, "CREATE TABLE mine (v int)"), "write cannot create a table")
-        self.assertFalse(self.can(self.ada, PASSWORD_ADA, one, "DROP TABLE before_people"), "write cannot drop a table")
-        self.assertFalse(self.can(self.ada, PASSWORD_ADA, one, "ALTER TABLE before_people ADD COLUMN w int"), "write cannot alter a table")
-
-    def test_3_tables_created_later_are_covered(self):
-        self.provision_people(self.people())
-        two = self.services[1]
-        with self.connect(two, two, "Svc-pw.x") as c:
-            cur = c.cursor()
-            cur.execute("CREATE TABLE IF NOT EXISTS after_people (id serial PRIMARY KEY, v text)")
-        self.assertTrue(self.can(self.tunde, PASSWORD_TUNDE, two, "SELECT * FROM after_people"), "default privileges give read the new table")
-        self.assertTrue(self.can(self.ada, PASSWORD_ADA, two, "INSERT INTO after_people (v) VALUES ('later')"), "and write too, with its sequence")
-
-    def test_4_changing_access_takes_effect(self):
-        self.provision_people(self.people(ada="read"))
-        self.assertFalse(self.can(self.ada, PASSWORD_ADA, self.services[0], "INSERT INTO before_people (id, v) VALUES (1001, 'x')"), "write -> read removes writing")
-        self.assertTrue(self.can(self.ada, PASSWORD_ADA, self.services[0], "SELECT 1 FROM before_people"), "and keeps reading")
-        self.provision_people(self.people())
-
-    def test_5_a_removed_person_can_no_longer_sign_in(self):
-        self.provision_people(self.people())
-        databases, removed = self.provision_people(self.people(with_tunde=False))
-        self.assertEqual(removed, [self.tunde])
-        self.assertFalse(self.can(self.tunde, PASSWORD_TUNDE, self.services[0], "SELECT 1"), "the login is gone")
-        self.assertTrue(self.can(self.ada, PASSWORD_ADA, self.services[0], "SELECT 1"), "the others stay")
-
-    def test_6_running_again_changes_nothing(self):
-        self.provision_people(self.people())
-        databases, removed = self.provision_people(self.people())
-        self.assertEqual(removed, [])
-        self.assertTrue(self.can(self.ada, PASSWORD_ADA, self.services[0], "SELECT 1"))
-
-    def test_7_a_new_service_is_covered_when_people_run(self):
-        three = f"pp_three_{self.suffix}"
-        self.provision_service(three)
-        databases, _ = self.provision_people(self.people())
-        self.assertIn(three, databases)
-        self.assertTrue(self.can(self.tunde, PASSWORD_TUNDE, three, "SELECT 1"))
-
-    def test_8_a_database_that_is_not_a_services_is_not_reached(self):
-        self.provision_people(self.people())
-        self.assertFalse(self.can(self.ada, PASSWORD_ADA, "postgres", "CREATE TABLE x (v int)"), "no table in the administrator's database")
-        self.assertFalse(self.can(self.ada, PASSWORD_ADA, "postgres", "CREATE ROLE sneaky"), "and no creating roles")
-
-    def test_9_a_services_own_user_is_untouched(self):
-        self.provision_people(self.people())
-        self.assertTrue(self.can(self.services[0], "Svc-pw.x", self.services[0], "CREATE TABLE svc_still_owns (v int)"), "the service keeps full control")
-
 
 # ------------------------------------------------------------------------------
 # MySQL
@@ -217,19 +232,14 @@ class RealPostgresPeople(unittest.TestCase):
 
 
 @unittest.skipUnless(MYSQL_HOST and CA, "set PROVISION_TEST_MYSQL_HOST and PROVISION_TEST_TLS_CA to run against a real MySQL")
-class RealMySQLPeople(unittest.TestCase):
+class RealMySQLPeople(Scenarios, unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.prov = load()
         cls.port = int(os.environ.get("PROVISION_TEST_MYSQL_PORT", "3306"))
-        cls.suffix = uuid.uuid4().hex[:6]
-        cls.admin = f"pm_admin_{cls.suffix}"
-        cls.admin_password = "Adm1n-pw.x"
-        # "_" is a wildcard in a database-level grant: ab_c must not also cover abxc.
-        cls.services = [f"pm_a_c{cls.suffix}", f"pm_two{cls.suffix}"]
-        cls.lookalike = f"pmxa_c{cls.suffix}"  # not a service: no user of its name
-        cls.ada, cls.tunde = f"agent_ada{cls.suffix}", f"agent_tunde{cls.suffix}"
-
+        s = uuid.uuid4().hex[:6]
+        cls.admin, cls.admin_password = f"pm_admin_{s}", "Adm1n-pw.x"
+        cls.services = [f"pm_one_{s}", f"pm_two_{s}", f"ma_c{s}", f"maxc{s}"]
         with cls.root() as c:
             cur = c.cursor()
             cur.execute(f"CREATE USER '{cls.admin}'@'%' IDENTIFIED BY '{cls.admin_password}'")
@@ -239,13 +249,10 @@ class RealMySQLPeople(unittest.TestCase):
                 "CREATE VIEW, SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE, CREATE USER, EVENT, TRIGGER "
                 f"ON *.* TO '{cls.admin}'@'%' WITH GRANT OPTION"
             )
-            cur.execute(f"CREATE DATABASE `{cls.lookalike}`")
-            cur.execute(f"CREATE TABLE `{cls.lookalike}`.t (v INT)")
-
         for service in cls.services:
-            with cls.admin_connection() as c:
-                cls.prov.provision_mysql(c, service, service, "Svc-pw.x")
-        with cls.as_user(cls.services[0], "Svc-pw.x", cls.services[0]) as c:
+            with cls.connect(None, cls.admin, cls.admin_password) as c:
+                cls.prov.provision_mysql(c, service, service, SVC_PW)
+        with cls.connect(cls.services[0], cls.services[0], SVC_PW) as c:
             cur = c.cursor()
             cur.execute("CREATE TABLE before_people (id INT AUTO_INCREMENT PRIMARY KEY, v VARCHAR(20))")
             cur.execute("INSERT INTO before_people (v) VALUES ('seed')")
@@ -254,11 +261,15 @@ class RealMySQLPeople(unittest.TestCase):
     def tearDownClass(cls):
         with cls.root() as c:
             cur = c.cursor()
-            for name in cls.services + [cls.lookalike, f"pm_three{cls.suffix}"]:
+            for name in cls.services:
                 cur.execute(f"DROP DATABASE IF EXISTS `{name}`")
                 cur.execute(f"DROP USER IF EXISTS '{name}'@'%'")
-            for user in (cls.ada, cls.tunde, cls.admin):
-                cur.execute(f"DROP USER IF EXISTS '{user}'@'%'")
+            cur.execute("SELECT User FROM mysql.user WHERE Host = '%%' AND (LEFT(User, 9) = 'platform.' OR LOCATE('.', User) > 0)")
+            for (user,) in cur.fetchall():
+                user = user.decode() if isinstance(user, bytes) else user
+                if any(user.startswith(p + ".") for p in cls.services + ["platform"]):
+                    cur.execute(f"DROP USER IF EXISTS '{user}'@'%'")
+            cur.execute(f"DROP USER IF EXISTS '{cls.admin}'@'%'")
 
     @classmethod
     def root(cls):
@@ -268,7 +279,7 @@ class RealMySQLPeople(unittest.TestCase):
                                password=os.environ.get("PROVISION_TEST_MYSQL_ROOT_PASSWORD", ""), autocommit=True)
 
     @classmethod
-    def as_user(cls, user, password, database=None):
+    def connect(cls, database, user, password):
         class Session:
             def __enter__(self):
                 self.c = cls.prov.connect_mysql(MYSQL_HOST, cls.port, user, password, database)
@@ -279,76 +290,26 @@ class RealMySQLPeople(unittest.TestCase):
 
         return Session()
 
-    @classmethod
-    def admin_connection(cls):
-        return cls.as_user(cls.admin, cls.admin_password)
+    def platform(self, **access):
+        with self.connect(None, self.admin, self.admin_password) as c:
+            self.prov.provision_scope_mysql(c, "platform", listed("platform", **access))
 
-    def provision_people(self, people):
-        with self.admin_connection() as c:
-            return self.prov.provision_people_mysql(c, people)
+    def agents(self, service, **access):
+        with self.connect(None, self.admin, self.admin_password) as c:
+            _, removed = self.prov.provision_scope_mysql(c, service, listed(service, **access), [service])
+        return removed
 
-    def people(self, ada="write", with_tunde=True):
-        people = {self.ada: {"password": PASSWORD_ADA, "access": ada}}
-        if with_tunde:
-            people[self.tunde] = {"password": PASSWORD_TUNDE, "access": "read"}
-        return people
+    def as_service(self, service, statement):
+        with self.connect(service, service, SVC_PW) as c:
+            c.cursor().execute(statement)
 
     def can(self, user, password, database, statement):
         try:
-            with self.as_user(user, password, database) as c:
+            with self.connect(database, user, password) as c:
                 c.cursor().execute(statement)
             return True
         except Exception:
             return False
-
-    def test_1_read_and_write_on_every_service_database(self):
-        databases, removed = self.provision_people(self.people())
-        for service in self.services:
-            self.assertIn(service, databases)
-        self.assertNotIn(self.lookalike, databases)
-        one = self.services[0]
-        self.assertTrue(self.can(self.tunde, PASSWORD_TUNDE, one, "SELECT v FROM before_people"))
-        self.assertFalse(self.can(self.tunde, PASSWORD_TUNDE, one, "INSERT INTO before_people (v) VALUES ('x')"), "read cannot write")
-        self.assertTrue(self.can(self.ada, PASSWORD_ADA, one, "INSERT INTO before_people (v) VALUES ('ada')"))
-        self.assertTrue(self.can(self.ada, PASSWORD_ADA, one, "DELETE FROM before_people WHERE v = 'ada'"))
-
-    def test_2_nobody_changes_tables(self):
-        self.provision_people(self.people())
-        self.assertFalse(self.can(self.ada, PASSWORD_ADA, self.services[0], "CREATE TABLE mine (v INT)"))
-        self.assertFalse(self.can(self.ada, PASSWORD_ADA, self.services[0], "DROP TABLE before_people"))
-
-    def test_3_tables_created_later_are_covered(self):
-        self.provision_people(self.people())
-        two = self.services[1]
-        with self.as_user(two, "Svc-pw.x", two) as c:
-            c.cursor().execute("CREATE TABLE IF NOT EXISTS after_people (v INT)")
-        self.assertTrue(self.can(self.tunde, PASSWORD_TUNDE, two, "SELECT * FROM after_people"))
-
-    def test_4_the_wildcard_does_not_reach_a_lookalike_database(self):
-        self.provision_people(self.people())
-        self.assertFalse(self.can(self.ada, PASSWORD_ADA, self.lookalike, "SELECT * FROM t"),
-                         f"a grant on {self.services[0]} must not cover {self.lookalike}")
-
-    def test_5_changing_access_and_removing_take_effect(self):
-        self.provision_people(self.people(ada="read"))
-        self.assertFalse(self.can(self.ada, PASSWORD_ADA, self.services[0], "INSERT INTO before_people (v) VALUES ('x')"))
-        _, removed = self.provision_people(self.people(with_tunde=False))
-        self.assertEqual(removed, [self.tunde])
-        self.assertFalse(self.can(self.tunde, PASSWORD_TUNDE, self.services[0], "SELECT 1"))
-        self.provision_people(self.people())
-
-    def test_6_a_new_service_is_covered_when_people_run(self):
-        three = f"pm_three{self.suffix}"
-        with self.admin_connection() as c:
-            self.prov.provision_mysql(c, three, three, "Svc-pw.x")
-        databases, _ = self.provision_people(self.people())
-        self.assertIn(three, databases)
-        self.assertTrue(self.can(self.tunde, PASSWORD_TUNDE, three, "SELECT 1"))
-
-    def test_7_no_access_to_the_system_schema(self):
-        self.provision_people(self.people())
-        self.assertFalse(self.can(self.ada, PASSWORD_ADA, "mysql", "SELECT authentication_string FROM mysql.user"),
-                         "a person never sees password hashes")
 
 
 if __name__ == "__main__":

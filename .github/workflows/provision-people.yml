@@ -1,8 +1,8 @@
 name: Provision People
 
 # ==============================================================================
-# Brings the team's database logins (agent_<name>, data/people.json) in line
-# with the people secret, without applying anything. The apply workflow does
+# Brings the platform's database logins (platform.<name>, data/people.json)
+# in line with the people secret, without applying anything. The apply workflow does
 # this after every apply; run this when that step was skipped or failed, for
 # example when staging's databases were stopped outside their working hours.
 #

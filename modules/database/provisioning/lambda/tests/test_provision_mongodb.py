@@ -42,6 +42,11 @@ class MongoDB(unittest.TestCase):
             "SERVICE_SECRET_PATTERN": "core-{service}-production-secret-vault",
         })
         self.mod = importlib.reload(importlib.import_module("provision"))
+        # These tests are about the service's own database and user. The people
+        # steps that follow (its agents, the platform list) are proven in
+        # test_provision_people.py and, against real servers, test_real_people.py.
+        self.mod.provision_scope = lambda *a, **k: {"people": [], "removed": []}
+        self.mod.provision_platform_people = lambda *a, **k: None
         self.mod.read_secret = lambda arn: dict(SECRETS[arn]) if arn in SECRETS else (_ for _ in ()).throw(self.mod.ProvisioningError("no secret " + arn))
         self.clients = []
         self.user_exists = False

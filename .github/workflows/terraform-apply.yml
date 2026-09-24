@@ -338,8 +338,8 @@ jobs:
       # ========================================================================
       # PROVISION PEOPLE
       #
-      # Brings the team's database logins (agent_<name>, data/people.json) in
-      # line with the people secret this apply may have changed. Runs after
+      # Brings the platform's database logins (platform.<name>,
+      # data/people.json) in line with the people secret this apply may have changed. Runs after
       # the role ARNs are published, so a failure here cannot hold those back.
       # A staging database stopped outside its working hours is skipped with a
       # warning; the "Provision people" workflow runs this step on demand.

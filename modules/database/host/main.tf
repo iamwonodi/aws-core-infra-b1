@@ -174,9 +174,9 @@ resource "aws_ssm_document" "database_provision" {
   }
 }
 
-# Brings the team's logins (agent_<name>, core's people list) on every running
-# engine in line with the people secret. Core's apply sends it after applying;
-# permission to send it is not permission to run arbitrary commands on the
+# Brings the platform's people (platform.<name>, core's people list) on every
+# running engine in line with the people secret. Core's apply sends it after
+# applying; permission to send it is not permission to run arbitrary commands on the
 # database host. It takes no parameters: the only input is the people secret.
 resource "aws_ssm_document" "database_provision_people" {
   name            = local.provision_people_document_name
@@ -185,7 +185,7 @@ resource "aws_ssm_document" "database_provision_people" {
 
   content = jsonencode({
     schemaVersion = "2.2"
-    description   = "Brings the team's database logins on the database host in line with core's people secret."
+    description   = "Brings the platform's database logins (platform.<name>) on the database host in line with core's people secret."
 
     mainSteps = [
       {
@@ -193,7 +193,7 @@ resource "aws_ssm_document" "database_provision_people" {
         name   = "provisionPeople"
         inputs = {
           timeoutSeconds = "600"
-          runCommand     = ["${local.database_workspace}/provision-people.sh"]
+          runCommand     = ["${local.database_workspace}/provision-people.sh platform"]
         }
       }
     ]

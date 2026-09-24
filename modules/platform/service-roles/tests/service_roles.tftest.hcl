@@ -573,31 +573,18 @@ run "a_name_in_the_platforms_database_family_fails" {
   expect_failures = [terraform_data.service_roles_invariants]
 }
 
-run "a_name_that_would_be_a_persons_database_user_fails" {
-  command = plan
-
-  # Would get the database user agent_ada: a person's.
-  variables {
-    entries = {
-      "a/one" = { service_name = "agent-ada", kind = "app", tier = "private", owner_id = "1", repository_id = "2" }
-    }
-  }
-
-  expect_failures = [terraform_data.service_roles_invariants]
-}
-
 run "a_name_merely_containing_a_reserved_word_is_allowed" {
   command = plan
 
   variables {
     entries = {
       "a/one" = { service_name = "mydatabase", kind = "app", tier = "private", owner_id = "1", repository_id = "2" }
-      "a/two" = { service_name = "useragent", kind = "app", tier = "private", owner_id = "3", repository_id = "4" }
+      "a/two" = { service_name = "platform-api", kind = "app", tier = "private", owner_id = "3", repository_id = "4" }
     }
   }
 
   assert {
     condition     = length(output.service_roles) == 2
-    error_message = "only names BEGINNING with a reserved prefix are refused"
+    error_message = "only names BEGINNING with a reserved prefix are refused, and people's logins reserve none"
   }
 }

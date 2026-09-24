@@ -19,11 +19,11 @@ variable "people" {
     access = string
   }))
   default     = {}
-  description = "The team members who get a database login (agent_<name>) and, where there is a front door, a sign-in. Keyed by a short name: 2 to 20 lowercase letters and digits, starting with a letter. access is \"read\" or \"write\"."
+  description = "The team members who get a database login (platform.<name>) and, where there is a front door, a sign-in. Keyed by a short name: 2 to 20 lowercase letters and digits, starting with a letter. access is \"read\" or \"write\"."
 
   validation {
     condition     = alltrue([for name in keys(var.people) : can(regex("^[a-z][a-z0-9]{1,19}$", name))])
-    error_message = "Each person's name must be 2 to 20 lowercase letters and digits, starting with a letter: it becomes the database user agent_<name>, which every engine accepts unquoted."
+    error_message = "Each person's name must be 2 to 20 lowercase letters and digits, starting with a letter: it becomes the database login platform.<name>, and every engine's login names are at most 32 characters (MySQL)."
   }
 
   validation {
@@ -45,7 +45,7 @@ variable "people" {
 variable "read_only" {
   type        = bool
   default     = false
-  description = "Refuse \"write\" for everyone. Set in production, where no one changes data from a GUI."
+  description = "Refuse \"write\" for everyone on this list."
 }
 
 variable "front_door" {

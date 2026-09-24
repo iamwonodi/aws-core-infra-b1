@@ -448,8 +448,9 @@ module "database_provisioning" {
   database_security_group_id = local.database_endpoints[each.key].security_group_id
   admin_secret_arn           = module.database_admin_secret[each.key].secret_arn
 
-  # Each function also brings the team's logins (agent_<name>) on its engine in
-  # line with the people secret.
+  # Each function also provisions people's logins on its engine: the platform
+  # list (platform.<name>, the people secret) and, with each service, that
+  # service's agents (<service>.<name>, from its own secret).
   people_secret_arn = module.people.secret_arn
 
   vpc_id     = module.network.vpc_id
@@ -493,9 +494,12 @@ module "database_schedule" {
 ################################################################################
 # PEOPLE
 #
-# The team members who use the team tools, from data/people.json (ships empty;
-# see data/README.md). Each gets a database login, agent_<name>, whose password
-# is kept in one secret that only administrators read and hand over.
+# The platform list: you and anyone trusted platform-wide, from data/people.json
+# (ships empty; see data/README.md). Each gets a login on EVERY service's
+# database, platform.<name>, read or write; the passwords are kept in one secret
+# that only administrators read and hand over. A service's own agents are that
+# service's business: they are declared in its repository and reach only its
+# database.
 # Staging's tools have web addresses behind the front door; people may read or write.
 ################################################################################
 
