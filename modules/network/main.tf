@@ -199,7 +199,7 @@ module "vpc_endpoint_sg" {
 ################################################################################
 
 module "global_outbound_routing" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v1.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v2.0.0"
 
   # Keyed by a fixed name, not by the group's ID: the IDs exist only after apply,
   # and for_each must know its keys when the plan is made.
@@ -226,7 +226,7 @@ module "global_outbound_routing" {
 # functions could not read a secret. Nothing here reaches the internet: the
 # isolated route table has no internet or NAT route.
 module "isolated_outbound_within_vpc" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v1.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v2.0.0"
 
   security_group_id = module.isolated_sg.security_group_id
   description       = "Allow the isolated tier to reach the VPC endpoints and the VPC's own hosts"
@@ -236,8 +236,10 @@ module "isolated_outbound_within_vpc" {
 }
 
 # S3 through the gateway endpoint: its prefix list is S3's address ranges in
-# this Region. The module above takes no prefix list, so the provider's resource.
-resource "aws_vpc_security_group_egress_rule" "isolated_to_s3" {
+# this Region.
+module "isolated_to_s3" {
+  source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v2.0.0"
+
   security_group_id = module.isolated_sg.security_group_id
   description       = "Allow the isolated tier to reach S3 through the gateway endpoint"
 
@@ -245,6 +247,13 @@ resource "aws_vpc_security_group_egress_rule" "isolated_to_s3" {
   from_port      = 443
   to_port        = 443
   prefix_list_id = data.aws_ec2_managed_prefix_list.s3.id
+}
+
+# This rule was the provider's resource until the egress-rule module took
+# prefix lists (v2.0.0). The move keeps an existing rule instead of replacing it.
+moved {
+  from = aws_vpc_security_group_egress_rule.isolated_to_s3
+  to   = module.isolated_to_s3.aws_vpc_security_group_egress_rule.this
 }
 
 ################################################################################
@@ -264,7 +273,7 @@ resource "aws_vpc_security_group_egress_rule" "isolated_to_s3" {
 ################################################################################
 
 module "endpoint_ingress_rule" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-sg-ingress-rule.git?ref=v1.2.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-sg-ingress-rule.git?ref=v1.2.1"
 
   # for_each requires a set of strings, not numbers -- endpoint_ingress_ports
   # is a list of numbers (locals.tf), so each value is converted to a string

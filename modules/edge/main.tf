@@ -180,7 +180,7 @@ module "private_alb_sg" {
 # prefix-list restriction remains correct for a VPC origin, not just a
 # custom origin -- see data.tf.
 module "private_alb_sg_ingress_rule" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-sg-ingress-rule.git?ref=v1.2.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-sg-ingress-rule.git?ref=v1.2.1"
 
   security_group_id = module.private_alb_sg.security_group_id
   description       = "Allow HTTPS from CloudFront origin-facing servers"
@@ -196,7 +196,7 @@ module "private_alb_sg_ingress_rule" {
 # AWS's default allow-all outbound rule when it creates a security group, so
 # without this rule the load balancer could reach nothing at all.
 module "private_alb_sg_egress_rule" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v1.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v2.0.0"
 
   security_group_id = module.private_alb_sg.security_group_id
   description       = "Allow the load balancer to reach its targets and identity provider"
@@ -242,7 +242,7 @@ module "internal_alb_sg" {
 
 # PRIVATE -> INTERNAL ALB firewall configuration.
 module "internal_alb_sg_ingress_rule" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-sg-ingress-rule.git?ref=v1.2.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-sg-ingress-rule.git?ref=v1.2.1"
   count  = var.internal_tier_enabled ? 1 : 0
 
   security_group_id            = module.internal_alb_sg[0].security_group_id
@@ -256,7 +256,7 @@ module "internal_alb_sg_ingress_rule" {
 # As for the private load balancer: without an outbound rule it could reach
 # none of its targets.
 module "internal_alb_sg_egress_rule" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v1.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v2.0.0"
   count  = var.internal_tier_enabled ? 1 : 0
 
   security_group_id = module.internal_alb_sg[0].security_group_id
