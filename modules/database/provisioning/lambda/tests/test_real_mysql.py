@@ -79,12 +79,12 @@ class RealMySQL(unittest.TestCase):
     def as_user(self, user, password, database=None):
         return self.prov.connect_mysql(HOST, self.port, user, password, database)
 
-    def provision(self, name, password="s3cret-pw.y"):
+    def provision(self, name, password="s3cret-pw.y", limit=None):
         if name not in self.created:
             self.created.append(name)
         connection = self.as_user(self.admin, self.admin_password)
         try:
-            self.prov.provision_mysql(connection, name, name, password)
+            self.prov.provision_mysql(connection, name, name, password, limit)
         finally:
             connection.close()
         return name
@@ -138,6 +138,28 @@ class RealMySQL(unittest.TestCase):
             connection.close()
         with self.assertRaises(self.prov.ProvisioningError):
             self.as_user(name, "s3cret-pw.y", name)
+
+
+    def open_as(self, name, count):
+        sessions = [self.as_user(name, "s3cret-pw.y", name) for _ in range(count)]
+        self.addCleanup(lambda: [s.close() for s in sessions])
+        return sessions
+
+    def test_the_connection_over_the_limit_is_refused_and_one_opens_when_another_closes(self):
+        name = self.provision(f"pt_capped_{self.suffix}", limit=2)
+        held = self.open_as(name, 2)
+        with self.assertRaisesRegex(Exception, "max_user_connections"):
+            self.open_as(name, 1)
+        held.pop().close()
+        self.open_as(name, 1)
+
+    def test_a_changed_limit_takes_effect_the_next_time_it_is_provisioned(self):
+        name = self.provision(f"pt_raised_{self.suffix}", limit=1)
+        self.open_as(name, 1)
+        with self.assertRaisesRegex(Exception, "max_user_connections"):
+            self.open_as(name, 1)
+        self.provision(name, limit=2)
+        self.open_as(name, 1)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,7 @@
+{
+  "service_default": 50,
+  "person": 5,
+  "service_exceptions": {
+    "orders": 100
+  }
+}

@@ -20,7 +20,7 @@ SERVICE_ARN="arn_orders"
 
 setup(){
   rm -rf "$FAKE_ROOT" "$WS"
-  mkdir -p "$FAKE_ROOT"/{secrets,compose-state,exec-out} "$WS"
+  mkdir -p "$FAKE_ROOT"/{secrets,compose-state,exec-out,ssm} "$WS"
   : > "$FAKE_ROOT/calls.log"
   cp "$A/provision-people.sh" "$WS/"
   cat > "$WS/.env" <<E
@@ -32,7 +32,10 @@ E
   printf '%s' '{"username":"admin","root_password":"R00t-pw.1"}' > "$FAKE_ROOT/secrets/arn_core"
   platform '{"platform.ada":{"password":"Ada-pw.0123","access":"write"},"platform.tunde":{"password":"Tunde-pw.0123","access":"read"}}'
   agents '{"bob":{"password":"Bob-pw.0123","access":"write"},"eve":{"password":"Eve-pw.0123","access":"read"}}'
+  # Core's connection limits, as its apply writes them.
+  limits '{"service_default":20,"person":5,"service_exceptions":{"billing":40}}'
 }
+limits(){ printf '%s' "$1" > "$FAKE_ROOT/ssm/core__database__connection-limits"; }
 platform(){ printf '%s' "$1" > "$FAKE_ROOT/secrets/$PEOPLE_ID"; }
 agents(){ # the service's secret, with its agents as a JSON string
   jq -n --arg a "$1" '{db_name: "orders", db_user: "orders", db_password: "Svc-pw.x", agents: $a}' > "$FAKE_ROOT/secrets/$SERVICE_ARN"
@@ -142,6 +145,28 @@ jq -n '{db_name: "orders", db_user: "orders", db_password: "Svc-pw.x"}' > "$FAKE
 prepare 1 ""
 run service "$WORK/request.json"; rc=$?
 check "a secret without an agents entry means none"      test $rc -eq 0
+
+echo "== connection limits"
+setup; running postgres
+run platform
+check "postgres: each person gets the person cap"        bash -c "[[ \$(grep -c 'CONNECTION LIMIT 5;' <<< \"\$(jq -r .stdin '$FAKE_ROOT/exec/003.json')\") == 2 ]]"
+check "  the groups are not capped"                       bash -c "! jq -r .stdin '$FAKE_ROOT/exec/003.json' | grep -q 'group_[a-z]*\" CONNECTION LIMIT'"
+setup; running mysql
+run platform
+check "mysql: each person gets the person cap"           bash -c "grep -hF \"WITH MAX_USER_CONNECTIONS 5;\" $FAKE_ROOT/exec/*.json | grep -q platform.ada"
+setup; running postgres
+PERSON_CONNECTION_LIMIT=3 run platform
+check "a cap passed down is used, not re-read"            bash -c "jq -r .stdin '$FAKE_ROOT/exec/003.json' | grep -qF 'CONNECTION LIMIT 3;' && ! grep -q 'ssm get-parameter' '$FAKE_ROOT/calls.log'"
+setup; running postgres; rm "$FAKE_ROOT/ssm/core__database__connection-limits"
+run platform; rc=$?
+check "no limits parameter: refused"                      test $rc -ne 0
+check "  and nothing reached the engine"                  test "$(execs)" = 0
+setup; running postgres; limits '{"service_default":20,"person":0,"service_exceptions":{}}'
+run platform; rc=$?
+check "a person cap of 0 is refused before the engine"    bash -c "[[ $rc -ne 0 && \$(ls '$FAKE_ROOT/exec'/*.json 2>/dev/null | wc -l) == 0 ]]"
+setup; running postgres
+PERSON_CONNECTION_LIMIT='5; DROP ROLE x' run platform; rc=$?
+check "a bad cap passed down is refused too"              bash -c "[[ $rc -ne 0 && \$(ls '$FAKE_ROOT/exec'/*.json 2>/dev/null | wc -l) == 0 ]]"
 
 echo "passed=$pass failed=$fail"
 [[ $fail -eq 0 ]]

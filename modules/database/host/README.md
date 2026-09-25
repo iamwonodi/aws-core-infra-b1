@@ -24,7 +24,9 @@ A random 32-character administrator password (letters, digits and `-_.` only, so
 
 `database_profile` is the IAM role/instance profile the database host runs as -- separate from any fleet's own profile in the `compute` module. `database` (the `compute-storage` module) is the actual EC2 instance: placed in the first isolated subnet, running the same shared AMI the `compute` module built, with an optional secondary EBS volume for persistent storage.
 
-### An SSM parameter
+### SSM parameters
+
+`aws_ssm_parameter.database_connection_limits` holds `connection_limits` (core's `data/connection-limits.json`) under `/<project>/database/connection-limits`, which the provisioning scripts read on every run; see *Connection limits* below.
 
 `aws_ssm_parameter.database_host_instance_id` publishes the database host's instance ID under `/project/database-hub/instance-id`, so other tooling (deployment scripts, runbooks) can look it up without needing to query Terraform state directly.
 
@@ -153,6 +155,12 @@ Access is given through each scope's groups with default privileges on PostgreSQ
 **A `set -e` bug found by actually testing the fix above**, not by reading the code: a failing `jq` lookup inside a bare command substitution aborts the whole script immediately under `set -e`, bypassing the intended clear error message entirely. Fixed by disabling `-e` around just that one call and checking its exit code explicitly.
 
 ---
+
+### Connection limits
+
+Each login may hold only so many connections open at the same moment: a service's own login its entry in `service_exceptions` or `service_default`, every person's login `person`, each counted separately. `provision-service.sh` reads `/<project>/database/connection-limits` once per run and passes the numbers on; `provision-people.sh`, when core's apply sends it on its own, reads the parameter itself. Core's SQL sets them with `ALTER ROLE ... CONNECTION LIMIT` (PostgreSQL) and `ALTER USER ... WITH MAX_USER_CONNECTIONS` (MySQL); MongoDB has no per-login limit. The administrator (`postgres`, `root`) is never capped.
+
+A parameter rather than the host's `.env`: the `.env` is part of the user data, and changing it would restart the database host. So a changed number needs no restart and no script refresh; it applies the next time the login is provisioned. A missing parameter or a number that is not a whole number from 1 to 10000 stops the run before anything reaches an engine.
 
 ## Inputs this module needs from elsewhere
 

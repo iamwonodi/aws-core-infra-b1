@@ -128,6 +128,22 @@ class Scenarios:
         self.assertEqual(self.agents(one, ada="write"), [])
         self.assertTrue(self.can(f"{one}.ada", PW["ada"], one, "SELECT 1"))
 
+    def test_9_each_person_is_capped_separately_and_the_service_is_not(self):
+        self.platform(limit=1, ada="write", tunde="read")
+        self.agents(self.services[1], limit=1, bob="read")
+        database = self.services[1]
+        with self.connect(database, "platform.ada", PW["ada"]):
+            self.assertFalse(self.can("platform.ada", PW["ada"], database, "SELECT 1"), "a second connection over the cap")
+            self.assertTrue(self.can("platform.tunde", PW["tunde"], database, "SELECT 1"), "another person has their own cap")
+            with self.connect(database, f"{database}.bob", PW["bob"]):
+                self.assertFalse(self.can(f"{database}.bob", PW["bob"], database, "SELECT 1"))
+                with self.connect(database, database, SVC_PW), self.connect(database, database, SVC_PW):
+                    pass  # the service's own login is not held to a person's cap
+        self.assertTrue(self.can("platform.ada", PW["ada"], database, "SELECT 1"), "room again once the first closed")
+        # Unset leaves a cap as it is, so the next run sets a roomier one.
+        self.platform(limit=5, ada="write", tunde="read")
+        self.agents(self.services[1], limit=5, bob="read")
+
     def test_8_the_services_own_user_is_untouched(self):
         one = self.services[0]
         self.agents(one, ada="write")
@@ -204,13 +220,13 @@ class RealPostgresPeople(Scenarios, unittest.TestCase):
 
         return Session()
 
-    def platform(self, **access):
+    def platform(self, limit=None, **access):
         self.prov.provision_scope_postgres(PG_HOST, self.port, self.admin, self.admin_password, "postgres",
-                                           "platform", listed("platform", **access))
+                                           "platform", listed("platform", **access), limit=limit)
 
-    def agents(self, service, **access):
+    def agents(self, service, limit=None, **access):
         _, removed = self.prov.provision_scope_postgres(PG_HOST, self.port, self.admin, self.admin_password, "postgres",
-                                                        service, listed(service, **access), [service])
+                                                        service, listed(service, **access), [service], limit)
         return removed
 
     def as_service(self, service, statement):
@@ -290,13 +306,13 @@ class RealMySQLPeople(Scenarios, unittest.TestCase):
 
         return Session()
 
-    def platform(self, **access):
+    def platform(self, limit=None, **access):
         with self.connect(None, self.admin, self.admin_password) as c:
-            self.prov.provision_scope_mysql(c, "platform", listed("platform", **access))
+            self.prov.provision_scope_mysql(c, "platform", listed("platform", **access), limit=limit)
 
-    def agents(self, service, **access):
+    def agents(self, service, limit=None, **access):
         with self.connect(None, self.admin, self.admin_password) as c:
-            _, removed = self.prov.provision_scope_mysql(c, service, listed(service, **access), [service])
+            _, removed = self.prov.provision_scope_mysql(c, service, listed(service, **access), [service], limit)
         return removed
 
     def as_service(self, service, statement):

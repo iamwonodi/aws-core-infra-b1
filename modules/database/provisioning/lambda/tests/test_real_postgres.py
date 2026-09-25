@@ -76,13 +76,13 @@ class RealPostgres(unittest.TestCase):
 
         return Session()
 
-    def provision(self, service, password="s3cret-pw.y"):
+    def provision(self, service, password="s3cret-pw.y", limit=None):
         name = f"pt_{service}_{self.suffix}"
         if name not in self.created_roles:
             self.created_roles.append(name)
             self.created_databases.append(name)
         with self.connect("postgres", self.admin, self.admin_password) as c:
-            self.prov.provision(c, name, name, password, self.admin)
+            self.prov.provision(c, name, name, password, self.admin, limit)
         with self.connect(name, self.admin, self.admin_password) as c:
             self.prov.provision_schema(c, name, self.admin)
         return name
@@ -134,6 +134,36 @@ class RealPostgres(unittest.TestCase):
             cur = c.cursor()
             cur.execute("SELECT rolcreaterole, rolcreatedb, rolsuper FROM pg_roles WHERE rolname = current_user")
             self.assertEqual(list(cur.fetchone()), [False, False, False], "a service's user must hold no administrative attribute")
+
+    def open_as(self, name, count):
+        sessions = [self.pg.connect(host=HOST, port=self.port, user=name, password="s3cret-pw.y", database=name, timeout=10) for _ in range(count)]
+        self.addCleanup(lambda: [s.close() for s in sessions])
+        return sessions
+
+    def test_the_connection_over_the_limit_is_refused_and_one_opens_when_another_closes(self):
+        name = self.provision("capped", limit=2)
+        held = self.open_as(name, 2)
+        with self.assertRaisesRegex(Exception, "too many connections"):
+            self.open_as(name, 1)
+        held.pop().close()
+        self.open_as(name, 1)  # room again
+
+    def test_a_changed_limit_takes_effect_the_next_time_it_is_provisioned(self):
+        name = self.provision("raised", limit=1)
+        self.open_as(name, 1)
+        with self.assertRaisesRegex(Exception, "too many connections"):
+            self.open_as(name, 1)
+        self.provision("raised", limit=2)  # the next apply
+        self.open_as(name, 1)
+
+    def test_a_lowered_limit_disconnects_no_one(self):
+        name = self.provision("lowered", limit=3)
+        held = self.open_as(name, 3)
+        self.provision("lowered", limit=1)
+        for session in held:
+            session.cursor().execute("SELECT 1")  # still connected
+        with self.assertRaisesRegex(Exception, "too many connections"):
+            self.open_as(name, 1)
 
 
 if __name__ == "__main__":

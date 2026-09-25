@@ -6,7 +6,7 @@
 -- is provisioned the same way.
 --
 -- provision.sh sets these before this file runs:
---   @target_db  @target_user  @target_pass
+--   @target_db  @target_user  @target_pass  @target_limit
 --
 -- Run as root, and safe to run again: Terraform triggers provisioning on every
 -- apply. The user's password is set each time, so a rotated secret heals itself.
@@ -28,6 +28,12 @@ PREPARE statement FROM @statement; EXECUTE statement; DEALLOCATE PREPARE stateme
 
 -- Set every time, so a rotated password takes effect on the next apply.
 SET @statement = CONCAT('ALTER USER ''', @target_user, '''@''%'' IDENTIFIED BY ''', @target_pass, '''');
+PREPARE statement FROM @statement; EXECUTE statement; DEALLOCATE PREPARE statement;
+
+-- How many connections the user may hold open at once (core's
+-- data/connection-limits.json), set every time like the password. provision.sh
+-- has checked it is a whole number from 1 to 10000.
+SET @statement = CONCAT('ALTER USER ''', @target_user, '''@''%'' WITH MAX_USER_CONNECTIONS ', @target_limit);
 PREPARE statement FROM @statement; EXECUTE statement; DEALLOCATE PREPARE statement;
 
 -- In a database-level GRANT, "_" and "%" in the database name are WILDCARDS.

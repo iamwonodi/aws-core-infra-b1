@@ -115,6 +115,56 @@ class ProvisioningError(Exception):
     """Anything that should fail the caller's workflow with a readable reason."""
 
 
+# ------------------------------------------------------------------------------
+# Connection limits
+# ------------------------------------------------------------------------------
+# How many connections each login may hold open at once, from core's
+# data/connection-limits.json: a service's own login (SERVICE_CONNECTION_LIMIT,
+# or its entry in SERVICE_CONNECTION_EXCEPTIONS) and each person's
+# (PERSON_CONNECTION_LIMIT). Set every run, like the password, so a changed
+# number takes effect the next time the login is provisioned. PostgreSQL and
+# MySQL enforce them; DocumentDB has no per-login limit. The administrator this
+# function signs in as is never capped.
+#
+# Unset (a function deployed before the limits existed): no limit is set or
+# changed, rather than guessing a number.
+# ------------------------------------------------------------------------------
+
+LIMIT_MAX = 10000
+
+
+def checked_limit(value, source):
+    """A whole number from 1 to LIMIT_MAX; 0 would lock the login out."""
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        raise ProvisioningError(f"{source} is not a whole number")
+    text = str(value).strip()
+    if not text.isdigit() or not 1 <= int(text) <= LIMIT_MAX:
+        raise ProvisioningError(f"{source} must be a whole number from 1 to {LIMIT_MAX}, not '{value}'")
+    return int(text)
+
+
+def service_connection_limit(service):
+    """This service's cap: its approved exception, or the default. None: unset."""
+    raw = os.environ.get("SERVICE_CONNECTION_EXCEPTIONS", "")
+    try:
+        exceptions = json.loads(raw) if raw.strip() else {}
+    except ValueError as error:
+        raise ProvisioningError("SERVICE_CONNECTION_EXCEPTIONS is not JSON") from error
+    if not isinstance(exceptions, dict):
+        raise ProvisioningError("SERVICE_CONNECTION_EXCEPTIONS is not a JSON object")
+    if service in exceptions:
+        return checked_limit(exceptions[service], f"the connection limit for {service}")
+
+    default = os.environ.get("SERVICE_CONNECTION_LIMIT", "")
+    return checked_limit(default, "SERVICE_CONNECTION_LIMIT") if default.strip() else None
+
+
+def person_connection_limit():
+    """Each person's cap. None: unset."""
+    value = os.environ.get("PERSON_CONNECTION_LIMIT", "")
+    return checked_limit(value, "PERSON_CONNECTION_LIMIT") if value.strip() else None
+
+
 def read_secret(arn):
     try:
         return json.loads(secrets.get_secret_value(SecretId=arn)["SecretString"])
@@ -157,7 +207,7 @@ def connect(host, port, user, password, database):
     return connection
 
 
-def provision(connection, database, user, password, admin):
+def provision(connection, database, user, password, admin, limit=None):
     """Create the role and the database, and give that role ownership of it."""
     role = quote_identifier(user)
     name = quote_identifier(database)
@@ -173,6 +223,9 @@ def provision(connection, database, user, password, admin):
 
     # Set every time: a rotated secret then heals itself on the next apply.
     cursor.execute(f"ALTER ROLE {role} WITH LOGIN PASSWORD {secret}")
+
+    if limit is not None:
+        cursor.execute(f"ALTER ROLE {role} CONNECTION LIMIT {checked_limit(limit, 'the connection limit')}")
 
     # On RDS the administrator is NOT a superuser: it is a member of rds_superuser,
     # which cannot become an arbitrary role. PostgreSQL refuses to create a
@@ -244,7 +297,7 @@ def connect_mysql(host, port, user, password, database):
     return connection
 
 
-def provision_mysql(connection, database, user, password):
+def provision_mysql(connection, database, user, password, limit=None):
     """Create the database and the user, and grant that user everything on that database only."""
     name = quote_mysql_identifier(database)
     account = "'" + quote_mysql_identifier(user)[1:-1] + "'@'%'"
@@ -266,6 +319,9 @@ def provision_mysql(connection, database, user, password):
 
     # Set every time: a rotated secret then heals itself on the next apply.
     cursor.execute(f"ALTER USER {account} IDENTIFIED BY {secret}")
+
+    if limit is not None:
+        cursor.execute(f"ALTER USER {account} WITH MAX_USER_CONNECTIONS {checked_limit(limit, 'the connection limit')}")
 
     cursor.execute(f"GRANT ALL PRIVILEGES ON {grant_name}.* TO {account}")
 
@@ -438,7 +494,7 @@ def service_databases_postgres(cursor, admin):
     return [row[0] for row in cursor.fetchall() if IDENTIFIER.match(row[0])]
 
 
-def people_postgres(connection, admin, scope, people, databases):
+def people_postgres(connection, admin, scope, people, databases, limit=None):
     """Logins, group membership and removals, from the administrator's database.
 
     Access is given through the scope's two groups rather than to each person:
@@ -469,6 +525,8 @@ def people_postgres(connection, admin, scope, people, databases):
             logger.info("Creating %s.", login)
             cursor.execute(f"CREATE ROLE {role} LOGIN")
         cursor.execute(f"ALTER ROLE {role} WITH LOGIN PASSWORD {quote_literal(person['password'])}")
+        if limit is not None:
+            cursor.execute(f"ALTER ROLE {role} CONNECTION LIMIT {checked_limit(limit, 'the connection limit')}")
 
         member, other = (write, read) if person["access"] == "write" else (read, write)
         cursor.execute(f"GRANT {member} TO {role}")
@@ -514,7 +572,7 @@ def people_postgres_database(connection, owner, scope):
     cursor.close()
 
 
-def provision_scope_postgres(host, port, admin, admin_password, admin_database, scope, people, databases=None):
+def provision_scope_postgres(host, port, admin, admin_password, admin_database, scope, people, databases=None, limit=None):
     """databases=None: every service's database (the platform scope)."""
     connection = connect(host, port, admin, admin_password, admin_database)
     try:
@@ -522,7 +580,7 @@ def provision_scope_postgres(host, port, admin, admin_password, admin_database, 
             cursor = connection.cursor()
             databases = service_databases_postgres(cursor, admin)
             cursor.close()
-        removed = people_postgres(connection, admin, scope, people, databases)
+        removed = people_postgres(connection, admin, scope, people, databases, limit)
     finally:
         connection.close()
 
@@ -550,7 +608,7 @@ def service_databases_mysql(cursor):
     return [row[0] for row in cursor.fetchall() if IDENTIFIER.match(row[0])]
 
 
-def provision_scope_mysql(connection, scope, people, databases=None):
+def provision_scope_mysql(connection, scope, people, databases=None, limit=None):
     """Logins, and grants on the scope's databases, given to each person directly.
 
     MySQL grants at the database level cover tables created later, so no group is
@@ -578,6 +636,8 @@ def provision_scope_mysql(connection, scope, people, databases=None):
 
         cursor.execute(f"CREATE USER IF NOT EXISTS {account} IDENTIFIED BY {secret}")
         cursor.execute(f"ALTER USER {account} IDENTIFIED BY {secret}")
+        if limit is not None:
+            cursor.execute(f"ALTER USER {account} WITH MAX_USER_CONNECTIONS {checked_limit(limit, 'the connection limit')}")
 
         # Start from nothing each time, so a change from write to read, or a
         # removed service, leaves no grant behind.
@@ -626,6 +686,7 @@ def provision_scope_mongodb(client, scope, people, database=None):
 def provision_scope(engine, host, port, admin, admin_database, scope, people, database=None):
     """Make this engine's logins of one scope match people. Returns what changed."""
     enforce_write_policy(scope, people)
+    limit = person_connection_limit()
 
     if engine == "mongodb":
         client = connect_mongodb(host, port, admin["username"], admin["password"])
@@ -640,12 +701,14 @@ def provision_scope(engine, host, port, admin, admin_database, scope, people, da
     if engine == "mysql":
         connection = connect_mysql(host, port, admin["username"], admin["password"], admin_database)
         try:
-            databases, removed = provision_scope_mysql(connection, scope, people, databases)
+            databases, removed = provision_scope_mysql(connection, scope, people, databases, limit)
         finally:
             connection.close()
         return {"people": sorted(people), "removed": removed, "databases": databases}
 
-    databases, removed = provision_scope_postgres(host, port, admin["username"], admin["password"], admin_database, scope, people, databases)
+    databases, removed = provision_scope_postgres(
+        host, port, admin["username"], admin["password"], admin_database, scope, people, databases, limit
+    )
     return {"people": sorted(people), "removed": removed, "databases": databases}
 
 
@@ -675,6 +738,7 @@ def handler(event, context):  # noqa: ARG001
         if not os.environ.get("PEOPLE_SECRET_ARN"):
             raise ProvisioningError("this function has no PEOPLE_SECRET_ARN: core has not given it the people secret")
 
+        person_connection_limit()  # a bad number stops the run before anything changes
         admin = read_secret(admin_secret_arn)
         logger.info("Provisioning people on %s (%s).", host, engine)
         result = provision_platform_people(engine, host, port, admin, admin_database)
@@ -702,6 +766,10 @@ def handler(event, context):  # noqa: ARG001
     user = credentials["db_user"]
     password = credentials["db_password"]
 
+    # Checked here, before anything is changed, as are the people's numbers.
+    limit = service_connection_limit(service)
+    person_connection_limit()
+
     logger.info("Provisioning %s on %s (%s).", database, host, engine)
 
     if engine == "mongodb":
@@ -714,14 +782,14 @@ def handler(event, context):  # noqa: ARG001
     elif engine == "mysql":
         connection = connect_mysql(host, port, admin["username"], admin["password"], admin_database)
         try:
-            provision_mysql(connection, database, user, password)
+            provision_mysql(connection, database, user, password, limit)
         finally:
             connection.close()
 
     else:
         connection = connect(host, port, admin["username"], admin["password"], admin_database)
         try:
-            provision(connection, database, user, password, admin["username"])
+            provision(connection, database, user, password, admin["username"], limit)
         finally:
             connection.close()
 

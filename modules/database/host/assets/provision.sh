@@ -746,6 +746,28 @@ fi
 
 
 # ==============================================================================
+# CONNECTION LIMIT
+#
+# How many connections the service's login may hold open at once, which core's
+# SQL sets for PostgreSQL and MySQL. provision-service.sh reads it from core's
+# connection-limits parameter and exports it. MongoDB has no per-login limit.
+# ==============================================================================
+
+if [[ "${RUN_AS}" == "admin" && ( "${ENGINE}" == "postgres" || "${ENGINE}" == "mysql" ) ]]; then
+
+  if ! [[ "${SERVICE_CONNECTION_LIMIT:-}" =~ ^[1-9][0-9]{0,4}$ ]] || (( SERVICE_CONNECTION_LIMIT > 10000 )); then
+
+    echo "ERROR: SERVICE_CONNECTION_LIMIT must be a whole number from 1 to 10000."
+    echo "       provision-service.sh sets it from core's connection-limits parameter."
+
+    exit 1
+
+  fi
+
+fi
+
+
+# ==============================================================================
 # RUN THE SCRIPT
 #
 # admin   core's own provisioning script, which creates the database and the role.
@@ -766,6 +788,7 @@ if [[ "${ENGINE}" == "mysql" ]]; then
       echo "SET @target_db='${TRUE_DB}';"
       echo "SET @target_user='${TRUE_USER}';"
       echo "SET @target_pass='${TRUE_PASS}';"
+      echo "SET @target_limit=${SERVICE_CONNECTION_LIMIT};"
       cat "${INIT_SCRIPT}"
     ) | docker exec \
         -i \
@@ -798,6 +821,7 @@ elif [[ "${ENGINE}" == "postgres" ]]; then
       echo "\\set target_db '${TRUE_DB}'"
       echo "\\set target_user '${TRUE_USER}'"
       echo "\\set target_pass '${TRUE_PASS}'"
+      echo "\\set target_limit ${SERVICE_CONNECTION_LIMIT}"
       cat "${INIT_SCRIPT}"
     ) | docker exec \
         -i \

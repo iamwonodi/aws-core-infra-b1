@@ -62,6 +62,12 @@ data "aws_iam_policy_document" "database_platform_read" {
   }
 
   statement {
+    sid       = "ReadConnectionLimits"
+    actions   = ["ssm:GetParameter"]
+    resources = ["arn:aws:ssm:${local.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.connection_limits_parameter}"]
+  }
+
+  statement {
     sid     = "ReadVaultSecrets"
     actions = ["secretsmanager:GetSecretValue"]
 

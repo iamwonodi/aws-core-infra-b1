@@ -229,3 +229,25 @@ variable "db_require_ecr_images" {
   default     = true
   description = "Whether engines may only use images from this account's ECR registry. Leave true while the database host sits in the isolated tier, which has no internet path to pull public images; the deploy fails fast with a clear message instead of timing out on a pull."
 }
+
+variable "connection_limits" {
+  type = object({
+    service_default    = number
+    person             = number
+    service_exceptions = map(number)
+  })
+  description = "How many connections each login may hold open at once on the database host's engines: service_default for each service's own login, person for each person's (agents and the platform list, each counted separately), and service_exceptions, { <service_name> = number }, for services core approves to differ. From the environment's data/connection-limits.json. PostgreSQL and MySQL enforce them; MongoDB (DocumentDB) has no per-login limit. The administrator is never capped."
+
+  validation {
+    condition = alltrue([
+      for limit in concat([var.connection_limits.service_default, var.connection_limits.person], values(var.connection_limits.service_exceptions)) :
+      limit == floor(limit) && limit >= 1 && limit <= 10000
+    ])
+    error_message = "Every connection limit is a whole number from 1 to 10000: 0 would lock the login out."
+  }
+
+  validation {
+    condition     = alltrue([for service in keys(var.connection_limits.service_exceptions) : can(regex("^[a-z][a-z0-9-]{1,20}[a-z0-9]$", service))])
+    error_message = "Each key of service_exceptions is a service name: 3-22 lowercase letters, digits and hyphens."
+  }
+}

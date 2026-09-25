@@ -498,6 +498,9 @@ module "database_provisioning" {
   # service's agents (<service>.<name>, from its own secret).
   people_secret_arn = module.people.secret_arn
 
+  # Connections each login may hold open at once (data/README.md).
+  connection_limits = jsondecode(file("${path.module}/data/connection-limits.json"))
+
   vpc_id     = module.network.vpc_id
   subnet_ids = module.network.isolated_subnet_ids
 

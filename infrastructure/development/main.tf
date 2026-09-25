@@ -347,6 +347,9 @@ module "database" {
   db_data_volume_device       = var.db_data_volume_device
   db_data_volume_size         = var.db_data_volume_size
   db_data_volume_mount_path   = var.db_data_volume_mount_path
+
+  # Connections each login may hold open at once (data/README.md).
+  connection_limits = jsondecode(file("${path.module}/data/connection-limits.json"))
 }
 
 ################################################################################

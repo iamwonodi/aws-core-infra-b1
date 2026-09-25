@@ -6,7 +6,7 @@
 -- provisioned the same way and no service writes its own CREATE DATABASE.
 --
 -- provision.sh sets these before this file runs:
---   :target_db  :target_user  :target_pass
+--   :target_db  :target_user  :target_pass  :target_limit
 --
 -- It is run as the administrator (postgres), and it must be safe to run again:
 -- Terraform triggers provisioning on every apply. So every step is conditional,
@@ -26,6 +26,12 @@ SELECT format('CREATE ROLE %I LOGIN', :'target_user')
 \gexec
 
 SELECT format('ALTER ROLE %I WITH LOGIN PASSWORD %L', :'target_user', :'target_pass')
+\gexec
+
+-- How many connections the role may hold open at once (core's
+-- data/connection-limits.json), set every time like the password. provision.sh
+-- has checked it is a whole number from 1 to 10000.
+SELECT format('ALTER ROLE %I CONNECTION LIMIT %s', :'target_user', :'target_limit')
 \gexec
 
 -- The database, owned by that role.

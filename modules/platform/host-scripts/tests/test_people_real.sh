@@ -26,8 +26,11 @@ TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MODULES="$(cd "$TESTS_DIR/../../.." && pwd)"
 WORK="$(mktemp -d)"
 export PATH="${TESTS_DIR}/real-bin:${PATH}"
-export REAL_SECRETS="$WORK/secrets" REAL_ENGINES="postgres mysql"
-mkdir -p "$REAL_SECRETS"
+export REAL_SECRETS="$WORK/secrets" REAL_SSM="$WORK/ssm" REAL_ENGINES="postgres mysql"
+mkdir -p "$REAL_SECRETS" "$REAL_SSM"
+# Core's connection limits. Each person may hold ONE connection, so the caps
+# section below can prove a second is refused; every other check opens one.
+printf '%s' '{"service_default":20,"person":1,"service_exceptions":{}}' > "$REAL_SSM/core__database__connection-limits"
 
 pass=0; fail=0
 ok(){ pass=$((pass+1)); echo "  ok   $1"; }; bad(){ fail=$((fail+1)); echo "  FAIL $1"; }
@@ -129,6 +132,17 @@ for engine in postgres mysql; do
   agents "$LIKE" $engine
   refused "$E: ${LIKE}'s agent is removed"                $as "$LIKE.ada" "$PW_ADA" "$LIKE" "SELECT 1"
   check   "$E: ${LOOK}'s agent survives"                  $as "$LOOK.ada" "$PW_ADA" "$LOOK" "SELECT 1"
+
+  echo "== $E: connection caps"
+  # A person's one allowed connection, held open for a few seconds.
+  if [[ $engine == postgres ]]; then hold="SELECT pg_sleep(4)"; else hold="SELECT SLEEP(4)"; fi
+  $as "platform.ada" "$PW_ADA" "$ONE" "$hold" >/dev/null 2>&1 & holder=$!
+  sleep 1.5
+  refused "$E: a second connection over the person's cap"   $as "platform.ada" "$PW_ADA" "$ONE" "SELECT 1"
+  check   "$E: another person has a cap of their own"       $as "$ONE.ada" "$PW_ADA" "$ONE" "SELECT 1"
+  check   "$E: the service's own login is not a person's"   $as "$ONE" Svc-pw.x "$ONE" "SELECT 1"
+  wait "$holder"
+  check   "$E: room again once the first closes"            $as "platform.ada" "$PW_ADA" "$ONE" "SELECT 1"
 
   echo "== $E: later tables"
   if [[ $engine == postgres ]]; then pg_as "$TWO" Svc-pw.x "$TWO" "CREATE TABLE IF NOT EXISTS after_people (id serial PRIMARY KEY, v text)"

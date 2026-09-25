@@ -45,6 +45,7 @@ A service's infrastructure role is granted `lambda:InvokeFunction` on exactly th
 1. Reads the administrator credential and the service's own secret (`db_name`, `db_user`, `db_password`).
 2. Becomes a member of the service's role first (RDS's administrator is not a superuser, and PostgreSQL refuses to create or own a database via a role its creator cannot become), then creates the role and the database if they are missing, and **sets the password every time** — which is what makes a rotated secret heal itself on the next apply.
 3. Revokes `PUBLIC` from the database and its `public` schema, so another service's user cannot reach it.
+4. Sets the service's connection limit (see *Connection limits*).
 
 It runs on every apply of the service, so every step is conditional.
 
@@ -68,6 +69,18 @@ People's logins are `<scope>.<name>`, at two scopes. Each run makes the engine's
 **Production:** with `agents_write_needs_approval`, an agent may write only if its login is in `write_exceptions` (core's `data/agent-write-exceptions.json`). A service asking for unapproved write fails its provisioning, before anything is changed. The platform list is not affected: it is core-approved.
 
 Logins are at most 32 characters (MySQL's limit, held on every engine).
+
+## Connection limits
+
+Each login may hold only so many connections open **at the same moment**, so that one service, or one person's forgotten tool, cannot use up the engine's total and cut every other service off. The numbers come from `connection_limits` (core's `data/connection-limits.json`) and are set on every run, like the password:
+
+| Login | Its cap |
+| --- | --- |
+| A service's own (`db_user`) | its entry in `service_exceptions`, or `service_default` |
+| Every person, at both scopes | `person`, each login counted separately |
+| The administrator this function signs in as | never capped |
+
+PostgreSQL: `ALTER ROLE ... CONNECTION LIMIT n`. MySQL: `ALTER USER ... WITH MAX_USER_CONNECTIONS n`. **DocumentDB has no per-login limit**, so nothing is set there. The connection over the cap is refused at once; lowering a cap disconnects no one. Every number is checked (a whole number from 1 to 10000) before any statement runs. The function reads them from `SERVICE_CONNECTION_LIMIT`, `PERSON_CONNECTION_LIMIT` and `SERVICE_CONNECTION_EXCEPTIONS`; a function deployed without them sets and changes no limit.
 
 ## Things that will bite you
 
@@ -100,6 +113,7 @@ Placing a function in a VPC needs `ec2:CreateNetworkInterface` and its companion
 | `people_secret_arn` | `null` | core's people secret (the platform list); without it the function provisions services and their agents only, and refuses `{"action": "people"}` |
 | `agents_write_needs_approval` | `false` | a service's agents write only if listed in `write_exceptions` (on in production) |
 | `write_exceptions` | `[]` | agent logins, `<service>.<name>`, core approves to write |
+| `connection_limits` | — | `{ service_default, person, service_exceptions }`: connections each login may hold open at once (see *Connection limits*) |
 | `vpc_id`, `subnet_ids` | — | the same isolated subnets as the database |
 | `log_retention_days` | `30` | |
 | `timeout_seconds` | `60` | |

@@ -32,6 +32,11 @@ set -euo pipefail
 #   MongoDB     platform: readAnyDatabase / readWriteAnyDatabase on admin;
 #               service: read / readWrite on the service's database.
 #
+# Every person's login gets the same cap on connections held open at once:
+# "person" in core's /<project>/database/connection-limits parameter, read here
+# unless provision-service.sh already passed it (PERSON_CONNECTION_LIMIT).
+# MongoDB has no per-login limit.
+#
 # The staging and production functions do the same on the managed databases
 # (modules/database/provisioning). SAFE TO RUN AGAIN.
 #
@@ -221,6 +226,53 @@ is_listed() {
 }
 
 # ------------------------------------------------------------------------------
+# Connection limits
+# ------------------------------------------------------------------------------
+# How many connections each login may hold open at once, from core's
+# data/connection-limits.json, which core's apply writes to this parameter. Read
+# on every run, so a changed number takes effect the next time a login is
+# provisioned; the host's .env could not carry it without a restart.
+
+CONNECTION_LIMITS_PARAMETER="/${PROJECT_NAME}/database/connection-limits"
+
+read_connection_limits() {
+  local limits
+
+  if ! limits="$(aws ssm get-parameter \
+      --name "${CONNECTION_LIMITS_PARAMETER}" \
+      --region "${AWS_REGION}" \
+      --query Parameter.Value \
+      --output text 2>/dev/null)" || [[ -z "${limits}" ]]; then
+    echo "ERROR: could not read ${CONNECTION_LIMITS_PARAMETER}. Core's apply writes it with the database host; has core been applied?" >&2
+    return 1
+  fi
+
+  if ! jq -e '(.service_default | type == "number") and (.person | type == "number") and (.service_exceptions | type == "object")' \
+      <<< "${limits}" >/dev/null 2>&1; then
+    echo "ERROR: ${CONNECTION_LIMITS_PARAMETER} is not { service_default, person, service_exceptions }." >&2
+    return 1
+  fi
+
+  printf '%s' "${limits}"
+}
+
+# A whole number from 1 to 10000: it is interpolated into SQL run as the
+# administrator, and 0 would lock the login out.
+valid_connection_limit() {
+  [[ "$1" =~ ^[1-9][0-9]{0,4}$ ]] && (( $1 <= 10000 ))
+}
+
+if [[ -z "${PERSON_CONNECTION_LIMIT:-}" ]]; then
+  LIMITS="$(read_connection_limits)" || exit 1
+  PERSON_CONNECTION_LIMIT="$(jq -r '.person' <<< "${LIMITS}")"
+fi
+
+if ! valid_connection_limit "${PERSON_CONNECTION_LIMIT}"; then
+  echo "ERROR: the per-person connection limit '${PERSON_CONNECTION_LIMIT}' is not a whole number from 1 to 10000." >&2
+  exit 1
+fi
+
+# ------------------------------------------------------------------------------
 # The administrator
 # ------------------------------------------------------------------------------
 
@@ -292,6 +344,7 @@ people_postgres() {
       echo "SELECT 'CREATE ROLE \"${login}\" LOGIN' WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${login}')"
       echo '\gexec'
       echo "ALTER ROLE \"${login}\" WITH LOGIN PASSWORD '${PEOPLE_PASSWORDS[$i]}';"
+      echo "ALTER ROLE \"${login}\" CONNECTION LIMIT ${PERSON_CONNECTION_LIMIT};"
       echo "GRANT ${member} TO \"${login}\";"
       echo "REVOKE ${other} FROM \"${login}\";"
     done
@@ -351,6 +404,7 @@ people_mysql() {
       login="${SCOPE}.${PEOPLE_NAMES[$i]}"
       echo "CREATE USER IF NOT EXISTS '${login}'@'%' IDENTIFIED BY '${PEOPLE_PASSWORDS[$i]}';"
       echo "ALTER USER '${login}'@'%' IDENTIFIED BY '${PEOPLE_PASSWORDS[$i]}';"
+      echo "ALTER USER '${login}'@'%' WITH MAX_USER_CONNECTIONS ${PERSON_CONNECTION_LIMIT};"
       # From nothing each time, so a change from write to read leaves no grant behind.
       echo "REVOKE ALL PRIVILEGES, GRANT OPTION FROM '${login}'@'%';"
 

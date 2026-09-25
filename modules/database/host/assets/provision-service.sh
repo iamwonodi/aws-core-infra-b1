@@ -24,6 +24,11 @@ set -euo pipefail
 # every step is conditional and the password is set each time -- which is what
 # makes a rotated secret heal itself on the next apply.
 #
+# CONNECTION LIMITS. Each login's cap on connections held open at once comes
+# from core's /<project>/database/connection-limits parameter: the service's own
+# (its approved exception, or the default) and each person's. MongoDB has no
+# per-login limit, so there they are not set.
+#
 # AFTERWARDS it runs provision-people.sh twice: for the service's own agents
 # (<service>.<name>, on its database only), then for the platform's people
 # (platform.<name>), so they reach the new database at once.
@@ -67,7 +72,7 @@ if ! [[ "${SERVICE}" =~ ^[a-z][a-z0-9-]{1,20}[a-z0-9]$ ]]; then
   exit 1
 fi
 
-for name in AWS_REGION DATABASE_WORKSPACE DEPLOY_BUCKET_NAME; do
+for name in PROJECT_NAME AWS_REGION DATABASE_WORKSPACE DEPLOY_BUCKET_NAME; do
   if [[ -z "${!name:-}" ]]; then
     echo "ERROR: ${name} is not set in ${ENV_FILE}." >&2
     exit 1
@@ -151,6 +156,62 @@ if [[ ! -s "${INIT_SCRIPT}" ]]; then
   echo "       Refresh the host's platform scripts (<project>-database-refresh-scripts)." >&2
   exit 1
 fi
+
+# ------------------------------------------------------------------------------
+# Connection limits
+# ------------------------------------------------------------------------------
+# How many connections each login may hold open at once, from core's
+# data/connection-limits.json, which core's apply writes to this parameter. Read
+# on every run, so a changed number takes effect the next time a login is
+# provisioned; the host's .env could not carry it without a restart.
+
+CONNECTION_LIMITS_PARAMETER="/${PROJECT_NAME}/database/connection-limits"
+
+read_connection_limits() {
+  local limits
+
+  if ! limits="$(aws ssm get-parameter \
+      --name "${CONNECTION_LIMITS_PARAMETER}" \
+      --region "${AWS_REGION}" \
+      --query Parameter.Value \
+      --output text 2>/dev/null)" || [[ -z "${limits}" ]]; then
+    echo "ERROR: could not read ${CONNECTION_LIMITS_PARAMETER}. Core's apply writes it with the database host; has core been applied?" >&2
+    return 1
+  fi
+
+  if ! jq -e '(.service_default | type == "number") and (.person | type == "number") and (.service_exceptions | type == "object")' \
+      <<< "${limits}" >/dev/null 2>&1; then
+    echo "ERROR: ${CONNECTION_LIMITS_PARAMETER} is not { service_default, person, service_exceptions }." >&2
+    return 1
+  fi
+
+  printf '%s' "${limits}"
+}
+
+# A whole number from 1 to 10000: it is interpolated into SQL run as the
+# administrator, and 0 would lock the login out.
+valid_connection_limit() {
+  [[ "$1" =~ ^[1-9][0-9]{0,4}$ ]] && (( $1 <= 10000 ))
+}
+
+# Read and checked before anything reaches the engine.
+LIMITS="$(read_connection_limits)" || exit 1
+
+# The service's own login: core's approved exception for it, or the default.
+SERVICE_CONNECTION_LIMIT="$(jq -r --arg s "${SERVICE}" '.service_exceptions[$s] // .service_default' <<< "${LIMITS}")"
+PERSON_CONNECTION_LIMIT="$(jq -r '.person' <<< "${LIMITS}")"
+
+for limit in "${SERVICE_CONNECTION_LIMIT}" "${PERSON_CONNECTION_LIMIT}"; do
+  if ! valid_connection_limit "${limit}"; then
+    echo "ERROR: '${limit}' in ${CONNECTION_LIMITS_PARAMETER} is not a whole number from 1 to 10000." >&2
+    exit 1
+  fi
+done
+
+# provision.sh sets the service's; provision-people.sh each person's.
+export SERVICE_CONNECTION_LIMIT PERSON_CONNECTION_LIMIT
+
+echo "Connection limits: ${SERVICE} ${SERVICE_CONNECTION_LIMIT}, each person ${PERSON_CONNECTION_LIMIT}."
 
 # ------------------------------------------------------------------------------
 # Provision

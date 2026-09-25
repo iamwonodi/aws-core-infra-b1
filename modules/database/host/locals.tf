@@ -79,6 +79,11 @@ locals {
 
   scripts_manifest_parameter = "/${var.project_name}/database/scripts-manifest"
 
+  # The connection limits, read by provision-service.sh and provision-people.sh
+  # each time they run. A parameter rather than the host's .env: the .env is part
+  # of the user data, and changing the user data would restart the database host.
+  connection_limits_parameter = "/${var.project_name}/database/connection-limits"
+
   scripts_manifest = merge(
     {
       (local.deploy_lib_key)                 = module.platform_scripts.deploy_lib_sha256

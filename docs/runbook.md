@@ -162,6 +162,8 @@ Three levels, each traceable to a person except the last:
 
 In production a service's agents are read-only unless listed in `infrastructure/production/data/agent-write-exceptions.json`.
 
+**Connection caps:** each service's login, and each person's, may hold only so many connections open at once, set in `infrastructure/<env>/data/connection-limits.json` (see that folder's `README.md`). A service or a person seeing *too many connections for role* (PostgreSQL) or *has exceeded the 'max_user_connections' resource* (MySQL) has reached its own cap, not the engine's: close idle connections (a pool that never releases them, a GUI left open), or raise the number there, or add an exception for that one service, and apply. A service's new cap takes effect when it is next provisioned; the platform list's at the end of core's apply.
+
 **Signing in to the tools** (development and staging): everyone on the platform list, and every agent a service declares, gets a sign-in automatically, and Cognito emails them an invitation. To see or re-run what the front door did, look at (or invoke) the `<project>-<env>-front-door` function; it changes nothing if any declaration is unreadable, and says which.
 
 ## If it stops

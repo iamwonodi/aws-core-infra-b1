@@ -103,6 +103,11 @@ resource "aws_lambda_function" "this" {
         ADMIN_DATABASE         = var.admin_database
         ENGINE                 = var.engine
         SERVICE_SECRET_PATTERN = local.service_secret_pattern
+
+        # Connections each login may hold open at once (data/connection-limits.json).
+        SERVICE_CONNECTION_LIMIT      = tostring(var.connection_limits.service_default)
+        PERSON_CONNECTION_LIMIT       = tostring(var.connection_limits.person)
+        SERVICE_CONNECTION_EXCEPTIONS = jsonencode(var.connection_limits.service_exceptions)
       },
       var.people_secret_arn == null ? {} : { PEOPLE_SECRET_ARN = var.people_secret_arn },
       var.agents_write_needs_approval ? { AGENT_WRITE = "approved", WRITE_EXCEPTIONS = join(",", var.write_exceptions) } : {},

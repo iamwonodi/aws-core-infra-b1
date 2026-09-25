@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
-# aws for the real-server people test: secrets come from $REAL_SECRETS/<id>.
+# aws for the real-server people test: secrets come from $REAL_SECRETS/<id>,
+# parameters from $REAL_SSM.
 if [[ "$1 $2" == "secretsmanager get-secret-value" ]]; then
   while [[ $# -gt 0 ]]; do [[ "$1" == "--secret-id" ]] && id="$2"; shift; done
   [[ -f "${REAL_SECRETS}/${id}" ]] || { echo "ResourceNotFoundException: ${id}" >&2; exit 254; }
   cat "${REAL_SECRETS}/${id}"; echo; exit 0
+fi
+# Parameters come from $REAL_SSM/<name, "/" as "__">.
+if [[ "$1 $2" == "ssm get-parameter" ]]; then
+  while [[ $# -gt 0 ]]; do [[ "$1" == "--name" ]] && name="$2"; shift; done
+  file="${REAL_SSM}/$(printf '%s' "${name#/}" | sed 's#/#__#g')"
+  [[ -f "${file}" ]] || { echo "ParameterNotFound: ${name}" >&2; exit 254; }
+  cat "${file}"; echo; exit 0
 fi
 echo "real-bin aws: unhandled $*" >&2; exit 99

@@ -17,7 +17,7 @@ SECRET_ARN='arn:aws:secretsmanager:af-south-1:123456789012:secret:core-auth-deve
 
 setup(){
   rm -rf "$FAKE_ROOT" "$WS"
-  mkdir -p "$FAKE_ROOT"/{secrets,s3/b,compose-state} "$WS"
+  mkdir -p "$FAKE_ROOT"/{secrets,s3/b,compose-state,ssm} "$WS"
   : > "$FAKE_ROOT/calls.log"
   cp "$A/provision.sh" "$A/provision-service.sh" "$A/provision-people.sh" "$WS/"
   # The platform scripts are installed flat in the workspace, as the fetch does.
@@ -38,7 +38,10 @@ E
     > "$FAKE_ROOT/secrets/$(printf '%s' "$SECRET_ARN" | tr '/:' '__')"
   # An engine is running, as its own Compose project.
   echo running > "$FAKE_ROOT/compose-state/db-postgres"
+  # Core's connection limits, as its apply writes them.
+  limits '{"service_default":20,"person":5,"service_exceptions":{"billing":40}}'
 }
+limits(){ printf '%s' "$1" > "$FAKE_ROOT/ssm/core__database__connection-limits"; }
 request(){ # <service> <engine> [secret-arn]
   mkdir -p "$FAKE_ROOT/s3/b/provisioning/$1"
   printf '{"service_name":"%s","database_engine":"%s","database_secrets_arn":"%s","secret_mappings":{"db_key":"db_name","user_key":"db_user","pass_key":"db_password"}}' \
@@ -95,6 +98,39 @@ setup; request auth mongodb; echo running > "$FAKE_ROOT/compose-state/db-mongodb
 run auth >/dev/null 2>&1
 check "mongodb: runs mongosh as the administrator"        bash -c "execn 1 | jq -e '.args | index(\"mongosh\") != null' >/dev/null && execn 1 | jq -r .stdin | grep -q 'createUser'"
 check "mongodb: the user lives in admin, as DocumentDB's do" bash -c "execn 1 | jq -r .stdin | grep -q 'getSiblingDB(\"admin\")' && execn 1 | jq -r .stdin | grep -q 'role: \"readWrite\", db: target_db'"
+
+echo "== connection limits"
+setup; request auth postgres
+run auth > "$WORK/out.txt" 2>&1
+check "the service gets the default"                     bash -c "execn 1 | jq -r .stdin | grep -qx '\\\\set target_limit 20'"
+check "  and core's SQL sets it"                         bash -c "execn 1 | jq -r .stdin | grep -q 'CONNECTION LIMIT %s'"
+check "its agents get the person cap"                     bash -c "execn 3 | jq -r .stdin | grep -qF 'ALTER ROLE \"auth.bob\" CONNECTION LIMIT 5;'"
+check "the platform's people too"                         bash -c "execn 6 | jq -r .stdin | grep -qF 'ALTER ROLE \"platform.ada\" CONNECTION LIMIT 5;'"
+check "the limits are read once for the whole run"        test "$(grep -c 'ssm get-parameter' "$FAKE_ROOT/calls.log")" = 1
+check "and named in the log"                              grep -q 'Connection limits: auth 20, each person 5' "$WORK/out.txt"
+setup; request billing postgres
+run billing >/dev/null 2>&1
+check "an approved exception replaces the default"        bash -c "execn 1 | jq -r .stdin | grep -qx '\\\\set target_limit 40'"
+setup; request auth mysql; echo running > "$FAKE_ROOT/compose-state/db-mysql"
+run auth >/dev/null 2>&1
+check "mysql: the service gets the default"               bash -c "execn 1 | jq -r .stdin | grep -qx 'SET @target_limit=20;' && execn 1 | jq -r .stdin | grep -q 'WITH MAX_USER_CONNECTIONS'"
+setup; request auth mongodb; echo running > "$FAKE_ROOT/compose-state/db-mongodb"
+run auth >/dev/null 2>&1
+check "mongodb: no limit, it has none per login"          bash -c "! execn 1 | jq -r .stdin | grep -q 'limit'"
+setup; request auth postgres; rm "$FAKE_ROOT/ssm/core__database__connection-limits"
+check "no limits parameter: refused"                      bash -c "! run auth >/dev/null 2>&1"
+check "  and nothing reached the engine"                  test "$(execs)" = 0
+for bad in '{"service_default":0,"person":5,"service_exceptions":{}}' \
+           '{"service_default":20,"person":10001,"service_exceptions":{}}' \
+           '{"service_default":"20; DROP ROLE x","person":5,"service_exceptions":{}}' \
+           '{"service_default":2.5,"person":5,"service_exceptions":{}}' \
+           '{"service_default":20,"person":5,"service_exceptions":{"auth":-1}}' \
+           '{"service_default":20}'; do
+  setup; request auth postgres; limits "$bad"
+  check "refused before the engine: $bad"                 bash -c "! run auth >/dev/null 2>&1 && [[ \$(ls \"$FAKE_ROOT/exec\"/*.json 2>/dev/null | wc -l) == 0 ]]"
+done
+setup; request auth postgres
+check "provision.sh alone refuses to run without a limit" bash -c "! bash '$WS/provision.sh' '$FAKE_ROOT/s3/b/provisioning/auth/config.json' '$WS/provision-postgres.sql' admin >/dev/null 2>&1"
 
 echo "== refusals"
 setup

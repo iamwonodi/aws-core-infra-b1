@@ -61,3 +61,23 @@ A service team's own members are not listed here: each service declares its **ag
 A service's agents are read-only in production unless core approves them here. **It ships empty (`[]`)**; `agent-write-exceptions.example.json` shows the shape: a list of agent logins, `"<service>.<name>"`.
 
 A service that asks for `write` in production for an agent not listed here fails its provisioning, with a message naming the agent and this file. Adding a line goes through core's production review.
+
+# connection-limits.json
+
+How many connections each login may hold open **at the same moment** on a shared database engine, so that one service, or one person's forgotten tool, cannot use up the engine's total and cut every other service off. The engine itself enforces the number: the connection over the cap is refused at once ("too many connections"), and one opens again as soon as another closes. It is not a rate: it does not slow queries or count connections over time.
+
+| Field | Meaning |
+| --- | --- |
+| `service_default` | Each service's own login (the one its application uses). Ships as `50` here |
+| `person` | Each person's login: every agent (`<service>.<name>`) and everyone on the platform list (`platform.<name>`), each counted separately. Ships as `5` |
+| `service_exceptions` | Services core approves to have a different number, `{ "<service_name>": <number> }`. Ships empty (`{}`); `connection-limits.example.json` shows the shape. Adding a line goes through core's review, like any change to this folder |
+
+Every number is a whole number from 1 to 10000. The engine's administrator is never capped: it is the emergency way in, and core's provisioning signs in with it.
+
+**What a service counts against its cap:** every connection its hosts hold, added together, since they all use the same login. Two hosts, each running four workers with one connection, hold eight; a deploy briefly runs old and new containers side by side, so leave room for that.
+
+**Caps are ceilings, not reservations.** This environment's engine is, by default (`database_instance_class`), `db.t4g.medium` (4 GiB): about 400 PostgreSQL connections, about 300 on MySQL. If the caps added together exceed that, services can still crowd each other out when every one is busy at once; the caps only stop any one of them taking it all.
+
+**When a change takes effect:** a service's cap, and its agents', the next time that service is provisioned (its own apply); the platform list's at the end of core's next apply. Lowering a cap disconnects nobody: it refuses new connections over the number. This environment's provisioning functions receive this file's values with core's apply.
+
+**MongoDB (DocumentDB) has no per-login connection limit**, so there the numbers are not enforced.

@@ -489,6 +489,9 @@ module "database_provisioning" {
   # service's agents (<service>.<name>, from its own secret).
   people_secret_arn = module.people.secret_arn
 
+  # Connections each login may hold open at once (data/README.md).
+  connection_limits = jsondecode(file("${path.module}/data/connection-limits.json"))
+
   # A service's agents may write in production only with core's approval: their
   # login listed in data/agent-write-exceptions.json (ships empty).
   agents_write_needs_approval = true

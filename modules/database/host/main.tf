@@ -286,6 +286,15 @@ module "database_host" {
   depends_on = [aws_ssm_parameter.database_scripts_manifest]
 }
 
+# Read by the provisioning scripts on every run, so a changed limit needs no
+# restart and no script refresh: it applies the next time a login is provisioned.
+resource "aws_ssm_parameter" "database_connection_limits" {
+  name        = local.connection_limits_parameter
+  description = "Connections each login may hold open at once on the database host's engines: service_default, person, service_exceptions."
+  type        = "String"
+  value       = jsonencode(var.connection_limits)
+}
+
 resource "aws_ssm_parameter" "database_host_instance_id" {
   name  = "/${var.project_name}/${local.database_service_name}/instance-id"
   type  = "String"
