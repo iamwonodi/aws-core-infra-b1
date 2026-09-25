@@ -42,6 +42,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v7
 
+      # Only an environment this project runs (environments.json).
+      - name: Check The Environment Is Enabled
+        run: bash scripts/ci/enabled-environments.sh --check "${{ inputs.environment }}"
+
       - name: Read Terraform Version
         run: echo "TF_VERSION=$(tr -d '[:space:]' < .terraform-version)" >> "${GITHUB_ENV}"
 

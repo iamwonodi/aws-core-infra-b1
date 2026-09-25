@@ -12,6 +12,9 @@ set -euo pipefail
 #     output is a ready-made JSON array of the environment names that
 #     actually changed (e.g. ["staging"]). That array is used as-is.
 #
+#   Either way, only environments listed in environments.json: a pull request
+#   drops the others, and a manual plan of one is refused.
+#
 #   - Triggered by "workflow_dispatch" (the manual path — used to plan a
 #     specific environment on demand, e.g. to pick up a new assets release
 #     with no Terraform file changes at all): there is no diff to filter,
@@ -34,16 +37,18 @@ EVENT_NAME="$1"
 MANUAL_ENVIRONMENT="$2"
 CHANGES_JSON="$3"
 
+ENABLED="$(dirname "${BASH_SOURCE[0]}")/enabled-environments.sh"
+
 if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
   if [[ -z "${MANUAL_ENVIRONMENT}" ]]; then
     echo "ERROR: workflow_dispatch run but no environment input was supplied." >&2
     exit 1
   fi
+  # A plan asked for by name must be one this project runs.
+  bash "${ENABLED}" --check "${MANUAL_ENVIRONMENT}"
   echo "[\"${MANUAL_ENVIRONMENT}\"]"
 else
-  if [[ -z "${CHANGES_JSON}" ]]; then
-    echo "[]"
-  else
-    echo "${CHANGES_JSON}"
-  fi
+  # The folders a pull request changed, less any environment this project does
+  # not run: those folders stay in the repository, ignored.
+  bash "${ENABLED}" --filter "${CHANGES_JSON:-[]}"
 fi

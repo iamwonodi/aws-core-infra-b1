@@ -68,7 +68,11 @@ REQUESTED="$1"
 CONFIRM="$2"
 
 if [[ "${REQUESTED}" == "all" ]]; then
-  TARGET_ENVIRONMENTS=("${VALID_ENVIRONMENTS[@]}")
+  # Every environment this project runs. An environment taken out of
+  # environments.json can still be named on its own: removing its state bucket
+  # is the last step of retiring it.
+  mapfile -t TARGET_ENVIRONMENTS < <(bash "$(dirname "${BASH_SOURCE[0]}")/ci/enabled-environments.sh" | jq -r '.[]')
+  [[ ${#TARGET_ENVIRONMENTS[@]} -gt 0 ]] || exit 1
   EXPECTED_CONFIRM="DESTROY-ALL-STATE-BUCKETS"
 else
   MATCHED=false

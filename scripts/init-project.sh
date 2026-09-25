@@ -32,12 +32,17 @@ set -euo pipefail
 # Usage:
 #   scripts/init-project.sh --project NAME --region REGION --domain BASE \
 #       [--private-domain BASE] [--reviewers login1,login2] [--repo OWNER/REPO] \
-#       [--staging-engines LIST] [--production-engines LIST] \
+#       [--environments LIST] [--staging-engines LIST] [--production-engines LIST] \
 #       [--skip-github] [--dry-run]
 #
 #   --domain BASE   production serves BASE, staging serves staging.BASE and
 #                   development serves dev.BASE (e.g. example.org).
 #   --private-domain BASE   same shape, for the VPC-only zone. Defaults to --domain.
+#   --environments LIST
+#                   the environments this project runs: comma-separated, any of
+#                   development, staging and production. Written to
+#                   environments.json, which every workflow reads; the others'
+#                   folders stay, ignored. Omitted, the current list is kept.
 #   --staging-engines LIST, --production-engines LIST
 #                   the database engines that environment runs, each on its own
 #                   instance: comma-separated from postgres, mysql (RDS) and
@@ -55,7 +60,7 @@ set -euo pipefail
 # ==============================================================================
 
 REPO_ROOT="${INIT_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-ENVIRONMENTS=(development staging production)
+ENVIRONMENTS_ARG=""
 
 PROJECT="" REGION="" DOMAIN="" PRIVATE_DOMAIN="" REVIEWERS="" REPO=""
 STAGING_ENGINES="" PRODUCTION_ENGINES=""
@@ -72,6 +77,7 @@ while [[ $# -gt 0 ]]; do
     --private-domain) PRIVATE_DOMAIN="${2:-}"; shift 2 ;;
     --reviewers)      REVIEWERS="${2:-}"; shift 2 ;;
     --repo)           REPO="${2:-}"; shift 2 ;;
+    --environments)       ENVIRONMENTS_ARG="${2:-}"; shift 2 ;;
     --staging-engines)    STAGING_ENGINES="${2:-}"; [[ -n "${STAGING_ENGINES}" ]] || STAGING_ENGINES="(empty)"; shift 2 ;;
     --production-engines) PRODUCTION_ENGINES="${2:-}"; [[ -n "${PRODUCTION_ENGINES}" ]] || PRODUCTION_ENGINES="(empty)"; shift 2 ;;
     --skip-github)    SKIP_GITHUB=true; shift ;;
@@ -124,6 +130,38 @@ check_engines() {
 }
 check_engines --staging-engines "${STAGING_ENGINES}"
 check_engines --production-engines "${PRODUCTION_ENGINES}"
+
+# ------------------------------------------------------------------------------
+# The environments this project runs
+# ------------------------------------------------------------------------------
+
+ENVIRONMENTS_FILE="${REPO_ROOT}/environments.json"
+
+if [[ -n "${ENVIRONMENTS_ARG}" ]]; then
+  [[ "${ENVIRONMENTS_ARG}" =~ ^(development|staging|production)(,(development|staging|production))*$ ]] \
+    || { echo "ERROR: --environments must be a comma-separated list of development, staging and production." >&2; exit 1; }
+  # In the platform's order, each once.
+  ENVIRONMENTS_JSON="$(jq -cn --arg list "${ENVIRONMENTS_ARG}" \
+    '($list | split(",")) as $given | [("development","staging","production") | select(. as $e | $given | index($e))]')"
+else
+  [[ -f "${ENVIRONMENTS_FILE}" ]] || { echo "ERROR: ${ENVIRONMENTS_FILE} is missing; pass --environments." >&2; exit 1; }
+  ENVIRONMENTS_JSON="$(ENVIRONMENTS_FILE="${ENVIRONMENTS_FILE}" bash "${REPO_ROOT}/scripts/ci/enabled-environments.sh")"
+fi
+mapfile -t ENVIRONMENTS < <(jq -r '.[]' <<< "${ENVIRONMENTS_JSON}")
+
+# Engines for an environment the project does not run would never be built.
+for engines_env in staging production; do
+  engines_value="$([[ "${engines_env}" == "staging" ]] && echo "${STAGING_ENGINES}" || echo "${PRODUCTION_ENGINES}")"
+  if [[ -n "${engines_value}" && " ${ENVIRONMENTS[*]} " != *" ${engines_env} "* ]]; then
+    echo "ERROR: --${engines_env}-engines was given, but ${engines_env} is not one of this project's environments (${ENVIRONMENTS[*]})." >&2
+    exit 1
+  fi
+done
+
+echo "Environments: ${ENVIRONMENTS[*]}"
+if [[ "${DRY_RUN}" != "true" ]]; then
+  jq -n --argjson e "${ENVIRONMENTS_JSON}" '{environments: $e}' > "${ENVIRONMENTS_FILE}"
+fi
 
 if [[ ${#errors[@]} -gt 0 ]]; then
   printf 'ERROR: %s\n' "${errors[@]}" >&2
@@ -325,14 +363,14 @@ fi
 
 echo
 echo "Checking that no placeholder remains."
-bash "${REPO_ROOT}/scripts/ci/check-placeholders.sh" \
-  "${REPO_ROOT}/infrastructure/development" \
-  "${REPO_ROOT}/infrastructure/staging" \
-  "${REPO_ROOT}/infrastructure/production"
+PLACEHOLDER_DIRS=()
+for env in "${ENVIRONMENTS[@]}"; do PLACEHOLDER_DIRS+=("${REPO_ROOT}/infrastructure/${env}"); done
+bash "${REPO_ROOT}/scripts/ci/check-placeholders.sh" "${PLACEHOLDER_DIRS[@]}"
 
 cat <<NEXT
 
-Done. Next steps, per environment (each is its own AWS account):
+Done. Next steps, for each of this project's environments (${ENVIRONMENTS[*]};
+each is its own AWS account):
 
   1. Point your AWS credentials at that environment's account
      (for example: export AWS_PROFILE=<profile-for-development>).

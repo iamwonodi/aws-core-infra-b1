@@ -22,7 +22,9 @@ scripts/init-project.sh --project acme --region eu-west-1 --domain example.org -
   --staging-engines postgres --production-engines postgres
 ```
 
-This writes `project_name`, `aws_region`, the domains and the state bucket into each environment's `terraform.tfvars` and `backend.tf`, and creates six GitHub Environments: `development`, `staging`, `production` and a `-plan` companion for each, with reviewers required on staging and production. Preview first with `--dry-run`. Commit the result.
+This writes `project_name`, `aws_region`, the domains and the state bucket into each environment's `terraform.tfvars` and `backend.tf`, and creates the GitHub Environments: each environment and a `-plan` companion, with reviewers required on staging and production. Preview first with `--dry-run`. Commit the result.
+
+**Which environments:** a project runs any one, two or all three. `--environments development,production` (say) writes `environments.json`, which every workflow and script reads: only those are set up, planned, applied, destroyed or provisioned, and the others' folders stay in the repository, ignored. Omitted, the current list is kept (the blueprint lists all three). To add one later, re-run with the longer list, then bootstrap it (step 4). **To retire one, destroy it first** (the destroy workflow acts only on listed environments), then remove it from the list, then remove its state bucket (`scripts/destroy-terraform-backend.sh <environment>`, which still accepts it by name).
 
 Domains: production serves the base domain, staging `staging.<base>`, development `dev.<base>`.
 

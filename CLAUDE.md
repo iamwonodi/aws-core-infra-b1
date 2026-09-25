@@ -27,6 +27,10 @@ Each environment is its own AWS account. `network` builds the VPC and tiers, `ed
 - Generated secrets use only letters, digits and `-_.`.
 - Commits are conventional (`feat:`, `fix:`, `refactor:`, `docs:`, `chore:`), and the tree stays `terraform fmt` clean.
 
+## Environments
+
+A project runs any subset of development, staging and production, listed in `environments.json` (set by `scripts/init-project.sh --environments`). Anything that acts on an environment asks `scripts/ci/enabled-environments.sh` (list, `--check ENV`, `--filter JSON`); never assume all three exist.
+
 ## Checks before a commit
 
 ```bash

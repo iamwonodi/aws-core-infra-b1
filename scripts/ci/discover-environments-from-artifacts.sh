@@ -50,6 +50,10 @@ for FILE in "${METADATA_FILES[@]}"; do
     exit 1
   fi
 
+  # The plan workflow plans only environments this project runs; a plan for
+  # another would mean environments.json changed in between. Refuse it.
+  bash "$(dirname "${BASH_SOURCE[0]}")/enabled-environments.sh" --check "${ENV_NAME}"
+
   ENVIRONMENTS="$(jq -c --arg env "${ENV_NAME}" '. + [$env]' <<< "${ENVIRONMENTS}")"
 done
 

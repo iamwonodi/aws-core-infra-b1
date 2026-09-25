@@ -8,7 +8,8 @@ fresh(){
   rm -rf "${WORK}/repo"; mkdir -p "${WORK}/repo/scripts/ci"
   cp -r "${SOURCE_ROOT}/infrastructure" "${WORK}/repo/infrastructure"
   find "${WORK}/repo" -name '.terraform*' -prune -exec rm -rf {} + 2>/dev/null
-  cp "${SCRIPTS}/ci/check-placeholders.sh" "${WORK}/repo/scripts/ci/"
+  cp "${SCRIPTS}/ci/check-placeholders.sh" "${SCRIPTS}/ci/enabled-environments.sh" "${WORK}/repo/scripts/ci/"
+  cp "${SOURCE_ROOT}/environments.json" "${WORK}/repo/"
   git -C "${WORK}/repo" init -q; git -C "${WORK}/repo" remote add origin https://github.com/acme/widgets.git
   export INIT_REPO_ROOT="${WORK}/repo" FAKE_GH_LOG="${WORK}/gh.log"; : > "${FAKE_GH_LOG}"
 }
@@ -93,4 +94,17 @@ check "an empty list is refused (say none)"            bad --project acme --regi
 check "a malformed list is refused"                    bad --project acme --region eu-west-1 --domain example.org --staging-engines "postgres, mysql"
 fresh; run --staging-engines postgres,mysql --production-engines postgres,mysql >/dev/null 2>&1
 check "the written lists are valid Terraform"          bash -c "cd '${WORK}/repo/infrastructure/production' && grep '^database_engines' terraform.tfvars | grep -qE '^database_engines = \\[(\"(postgres|mysql|mongodb)\"(, )?)+\\]$'"
+echo "== environments"
+fresh; run --environments production,development >"${WORK}/out.txt" 2>&1; rc=$?
+check "--environments succeeds"                        test $rc -eq 0
+check "environments.json lists them, in order"         bash -c "[ \"\$(jq -c .environments '${WORK}/repo/environments.json')\" = '[\"development\",\"production\"]' ]"
+check "their files are set"                            bash -c "[ \"$(val production project_name terraform.tfvars)\" = acme ]"
+check "staging's are left alone"                       grep -q CHANGE_ME "${WORK}/repo/infrastructure/staging/terraform.tfvars"
+check "no GitHub Environment for staging"              bash -c "! grep -q 'environments/staging' '${FAKE_GH_LOG}'"
+check "production's is set up"                         grep -q 'environments/production --input' "${FAKE_GH_LOG}"
+fresh; run --environments development,production >/dev/null 2>&1; run >"${WORK}/out.txt" 2>&1; rc=$?
+check "omitted, the current list is kept"              bash -c "[ $rc -eq 0 ] && [ \"\$(jq -c .environments '${WORK}/repo/environments.json')\" = '[\"development\",\"production\"]' ] && grep -q CHANGE_ME '${WORK}/repo/infrastructure/staging/terraform.tfvars'"
+fresh
+check "an unknown environment is refused"              bash -c "! bash '${INIT}' ${ARGS[*]} --environments prod >/dev/null 2>&1"
+check "engines for an environment not run are refused" bash -c "! bash '${INIT}' ${ARGS[*]} --environments development,production --staging-engines postgres >/dev/null 2>&1"
 finish

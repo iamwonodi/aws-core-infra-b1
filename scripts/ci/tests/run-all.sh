@@ -3,7 +3,7 @@
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 failed=0
-for suite in test_placeholders.sh test_lock_files.sh test_metadata.sh test_publish.sh test_identity.sh test_init.sh test_ca_bundle.sh test_people.sh; do
+for suite in test_placeholders.sh test_lock_files.sh test_metadata.sh test_publish.sh test_identity.sh test_init.sh test_ca_bundle.sh test_people.sh test_environments.sh; do
   echo "################ ${suite}"
   bash "./${suite}" || failed=1
 done

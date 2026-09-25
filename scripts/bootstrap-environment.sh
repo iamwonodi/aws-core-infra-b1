@@ -91,8 +91,12 @@ if [[ $# -eq 2 ]]; then
   SET_SECRETS=true
 fi
 
+ENABLED_SCRIPT="$(dirname "${BASH_SOURCE[0]}")/ci/enabled-environments.sh"
+
 if [[ "${REQUESTED}" == "all" ]]; then
-  TARGET_ENVIRONMENTS=("${VALID_ENVIRONMENTS[@]}")
+  # Every environment this project runs (environments.json).
+  mapfile -t TARGET_ENVIRONMENTS < <(bash "${ENABLED_SCRIPT}" | jq -r '.[]')
+  [[ ${#TARGET_ENVIRONMENTS[@]} -gt 0 ]] || exit 1
 else
   MATCHED=false
   for ENV in "${VALID_ENVIRONMENTS[@]}"; do
@@ -106,6 +110,8 @@ else
     echo "       Must be one of: development, staging, production, all" >&2
     exit 1
   fi
+  # Only an environment this project runs is set up.
+  bash "${ENABLED_SCRIPT}" --check "${REQUESTED}" || exit 1
   TARGET_ENVIRONMENTS=("${REQUESTED}")
 fi
 

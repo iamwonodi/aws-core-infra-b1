@@ -21,8 +21,14 @@ fi
 
 SELECTED="$1"
 
+ENABLED="$(dirname "${BASH_SOURCE[0]}")/enabled-environments.sh"
+
+# "all" is every environment this project runs (environments.json), in the
+# platform's order: development, staging, production. One named must be one of
+# them.
 if [[ "${SELECTED}" == "all" ]]; then
-  echo '["development","staging","production"]'
+  bash "${ENABLED}"
 else
+  bash "${ENABLED}" --check "${SELECTED}"
   echo "[\"${SELECTED}\"]"
 fi
