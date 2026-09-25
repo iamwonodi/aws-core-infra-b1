@@ -46,6 +46,10 @@ on:
       - "infrastructure/development/**"
       - "infrastructure/staging/**"
       - "infrastructure/production/**"
+      # Shared by every environment: a change to either plans (and applies)
+      # all of this project's environments.
+      - "modules/**"
+      - ".terraform-version"
   workflow_dispatch:
     inputs:
       plan_run_id:

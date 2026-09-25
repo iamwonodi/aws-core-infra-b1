@@ -27,6 +27,8 @@ runs '["development","production"]'
 check "a pull request drops environments not run"          test "$(out bash "$R" pull_request '' '["staging","production"]')" = '["production"]'
 check "a pull request touching none of them plans none"    test "$(out bash "$R" pull_request '' '["staging"]')" = '[]'
 check "no changes, no plans"                               test "$(out bash "$R" pull_request '' '')" = '[]'
+check "a shared change plans every environment run"        test "$(out bash "$R" pull_request '' '["shared"]')" = '["development","production"]'
+check "and with an environment too, still each once"       test "$(out bash "$R" pull_request '' '["production","shared"]')" = '["development","production"]'
 check "a manual plan of an enabled one"                    test "$(out bash "$R" workflow_dispatch production '')" = '["production"]'
 check "a manual plan of another is refused"                bash -c "! bash '$R' workflow_dispatch staging '' >/dev/null 2>&1"
 

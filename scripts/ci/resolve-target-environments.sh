@@ -49,6 +49,11 @@ if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
   echo "[\"${MANUAL_ENVIRONMENT}\"]"
 else
   # The folders a pull request changed, less any environment this project does
-  # not run: those folders stay in the repository, ignored.
-  bash "${ENABLED}" --filter "${CHANGES_JSON:-[]}"
+  # not run: those folders stay in the repository, ignored. "shared" (modules/,
+  # .terraform-version) is used by every environment, so it plans them all.
+  if jq -e 'index("shared") != null' <<< "${CHANGES_JSON:-[]}" >/dev/null; then
+    bash "${ENABLED}"
+  else
+    bash "${ENABLED}" --filter "${CHANGES_JSON:-[]}"
+  fi
 fi

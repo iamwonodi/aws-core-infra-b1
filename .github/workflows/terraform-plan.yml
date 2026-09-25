@@ -9,9 +9,10 @@ name: Terraform Plan
 #
 # TWO TRIGGERS, ONE UNIFIED JOB:
 #
-#   - pull_request (automatic): fires when a PR touches this environment's
-#     Terraform files. Which environment(s) to plan is decided by
-#     dorny/paths-filter. Uses the DEFAULT assets ref (vars.ASSETS_REF, or
+#   - pull_request (automatic): fires when a PR touches an environment's
+#     Terraform files, or what they all share (modules/, .terraform-version),
+#     which plans every environment this project runs. Which environment(s)
+#     to plan is decided by dorny/paths-filter. Uses the DEFAULT assets ref (vars.ASSETS_REF, or
 #     "main" if unset) — appropriate for routine infra changes where you
 #     are not deliberately testing a specific assets release.
 #
@@ -46,6 +47,10 @@ on:
       - "infrastructure/development/**"
       - "infrastructure/staging/**"
       - "infrastructure/production/**"
+      # Shared by every environment: a change to either plans (and applies)
+      # all of this project's environments.
+      - "modules/**"
+      - ".terraform-version"
   workflow_dispatch:
     inputs:
       environment:
@@ -94,6 +99,9 @@ jobs:
             development: 'infrastructure/development/**'
             staging: 'infrastructure/staging/**'
             production: 'infrastructure/production/**'
+            shared:
+              - 'modules/**'
+              - '.terraform-version'
 
       - name: Resolve Target Environments
         id: resolve
