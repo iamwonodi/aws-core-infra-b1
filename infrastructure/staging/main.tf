@@ -125,7 +125,7 @@ module "team_tools_role" {
 }
 
 module "github_oidc" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-oidc.git?ref=v1.1.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-oidc.git?ref=v1.1.1"
 
   # ---------------------------------------------------------------------------
   # Core Repository
@@ -168,7 +168,7 @@ module "github_oidc" {
 # Keeping them in their own instance lets the bootstrap create only the
 # provider and the core role.
 module "github_service_roles" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-oidc.git?ref=v1.1.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-oidc.git?ref=v1.1.1"
 
   create_oidc_provider = false # already created by module.github_oidc
   create_core_role     = false
