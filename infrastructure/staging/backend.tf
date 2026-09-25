@@ -1,8 +1,8 @@
 terraform {
   backend "s3" {
-    bucket       = "core-staging-tfstate"   # Remember to change the core in "core-staging-tfstate" to the name of the project that own this service/application.
+    bucket       = "core-staging-tfstate"   # <project>-staging-tfstate: scripts/init-project.sh sets it
     key          = "core/terraform.tfstate" # Folder path inside your bucket
-    region       = "af-south-1"             # TODO: must match your actual state bucket's region -- backend blocks cannot reference var.aws_region, since they're evaluated before any variables exist. Keep this in sync with terraform.tfvars's aws_region by hand.
+    region       = "af-south-1"             # backend blocks cannot use variables: scripts/init-project.sh sets it with aws_region
     encrypt      = true                     # Forces encryption on upload
     use_lockfile = true                     # Native S3 locking, no DynamoDB
   }
