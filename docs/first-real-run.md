@@ -15,7 +15,7 @@ Everything here has been built and tested offline (mocked AWS, fake command-line
 - [ ] **The network:** a request through CloudFront reaches a service (the load balancers' outbound rules); the database host is reachable by SSM, fetches its scripts from S3 and pulls from ECR (the isolated tier's outbound rules and network ACL).
 - [ ] **The database host** (development) starts, and the engines repository's first deploy runs (section 2).
 - [ ] **Staging and production:** RDS and DocumentDB are created; the provisioning functions reach their database and Secrets Manager (they wear the isolated group), verify TLS and authenticate (SCRAM on PostgreSQL). Staging's `working_hours` schedule starts and stops the databases.
-- [ ] **The dedicated-hosting policy** (service roles, staging and production) is a first draft: the first service apply may name a missing action. It is close to IAM's 10,240-character limit, so the next additions need a managed policy.
+- [ ] **The dedicated-hosting policy** (service roles, staging and production) is a first draft: the first service apply may name a missing action. Each role's permissions are managed policies under `/platform/service-roles/` (8 statements each), so an added action has room.
 - [ ] **The front door** (development, staging): the Cognito pool exists; writing `front-door/_platform.json` invokes the front-door function (its logs show the reconciliation).
 - [ ] **Provision People** (the apply's last step) creates the `platform.` logins on each engine.
 

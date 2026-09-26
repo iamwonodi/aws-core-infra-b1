@@ -1,6 +1,6 @@
 # Service Roles Module
 
-Turns the entries of `service-roles.json` into the OIDC module's `service_roles` input: for each **repository**, the token subjects to trust (see `github-identity`) and a **generated, scoped inline policy**.
+Turns the entries of `service-roles.json` into the OIDC module's `service_roles` input: for each **repository**, the token subjects to trust (see `github-identity`) and a **generated, scoped policy**, published as managed policies (see *Size*).
 
 ## Two roles per service
 
@@ -68,6 +68,20 @@ Repository keys are `OWNER/REPOSITORY`; `kind` is `app` or `infra`; `service_nam
 
 ## Size
 
-Each policy must stay under IAM's 10,240-character limit for a role's inline policies. `policy_sizes` reports it: about 2,300 for an app role, 4,900 for a shared infra role and **9,700 for a dedicated infra role**. A precondition fails the plan if any policy exceeds the limit, rather than letting IAM reject the apply. The dedicated one has little headroom; the next statements added to it will have to go into managed policies instead (each at most 6,144 characters).
+### Size
+
+IAM allows a role 10,240 characters of inline policy, and a dedicated infra role with three engines and the front door needs more: about 10,300 characters for a short service name, 10,700 for the longest. So each role's statements are published as **managed policies**, 8 statements each (`statements_per_policy`):
+
+| Role | Statements | Managed policies |
+| --- | --- | --- |
+| app | 10 | 2 |
+| shared infra (development) | 19 | 3 |
+| dedicated infra (staging, production) | up to 37 | 5 |
+
+Each is at most about 4,400 characters, against IAM's 6,144 per managed policy, and a role may carry 10. The split is by **number** of statements, never their length: some statements hold values known only after apply, and the number of policies must be known at the first plan. For the same reason each role is given its policies' ARNs as built strings (`arn:aws:iam::<account>:policy/platform/service-roles/<name>`), and the `service_roles` output waits for the policies to exist.
+
+They live under **`/platform/service-roles/`**, named `<project>-<environment>-<service>-<kind>-<n>`: a dedicated infra role may create and change policies under its own path `/services/<service>/`, and must never be able to change its own permissions.
+
+`policy_sizes` reports each managed policy's size and `policies` the whole policy as one document, for review. Two preconditions stop the plan if a role would need more than 10 policies or a policy exceeds 6,144 characters; either means changing `statements_per_policy`, not trimming what a role needs.
 
 **The dedicated policy is a first draft.** It covers resources whose creation has not yet been exercised against AWS. Its first real plan is the test; expect to add an action or two. Managed databases are not covered yet.

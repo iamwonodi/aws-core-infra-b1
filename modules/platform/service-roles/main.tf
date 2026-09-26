@@ -47,10 +47,19 @@
 #
 # Where an action list would run to a dozen names, a wildcard is used instead
 # (secretsmanager:* on the service's own secret, autoscaling:* on its own group,
-# iam:Get*/List* on its own IAM path): the RESOURCE is what confines it, and the
-# policy must stay under IAM's size limit. When further statements are
-# added the dedicated infra policy will outgrow one inline policy and must be split
-# into managed policies (each at most 6,144 characters).
+# iam:Get*/List* on its own IAM path): the RESOURCE is what confines it.
+#
+# MANAGED POLICIES, NOT ONE INLINE POLICY. IAM allows a role 10,240 characters of
+# inline policy; a dedicated infra role with three engines and the front door
+# needs more (about 10,300 for a short service name, 10,700 for the longest). So
+# each role's statements are published as managed policies, STATEMENTS_PER_POLICY
+# at a time (at most 6,144 characters each, and at most 10 per role). The split
+# is by number of statements, never by their length: some statements hold values
+# known only after apply, and the number of policies must be known at plan.
+#
+# They live under /platform/service-roles/, not the service's own IAM path
+# /services/<service>/: a dedicated infra role may create and change policies
+# there, and must never be able to change its own permissions.
 #
 # THE DEDICATED POLICY IS A FIRST DRAFT for resources whose creation has not yet
 # been exercised against AWS. Its first real plan is the test; expect to add an
@@ -58,8 +67,8 @@
 #
 # Each policy is built as a list of JSON statements (strings) so the four
 # variants -- app and infra, shared and dedicated -- can be concatenated without
-# Terraform needing their differently-shaped objects to unify. It must stay under
-# IAM's 10,240 characters for a role's inline policies; policy_sizes reports it.
+# Terraform needing their differently-shaped objects to unify. policy_sizes
+# reports each managed policy's size.
 # ------------------------------------------------------------------------------
 
 locals {
@@ -772,18 +781,84 @@ locals {
     )
   }
 
+  # The whole of each role's permissions as one document, for review and tests.
   policies = {
     for repository, statements in local.statements :
     repository => "{\"Version\":\"2012-10-17\",\"Statement\":[${join(",", statements)}]}"
   }
 
-  # IAM allows 10,240 characters across a role's inline policies. Reaching it is a
-  # real prospect: the dedicated infra policy is already over 9 KB.
-  inline_policy_limit = 10240
+  ##############################################################################
+  # MANAGED POLICIES -- the statements, STATEMENTS_PER_POLICY at a time
+  ##############################################################################
+
+  # The largest statement today is about 540 characters (the longest service name
+  # in a long Region name), so 8 of them come to about 4,400: each could still
+  # grow by 40% before a policy reached IAM's 6,144.
+  statements_per_policy  = 8
+  managed_policy_limit   = 6144
+  managed_policies_limit = 10 # IAM's default for managed policies attached to one role
+
+  policy_chunks = {
+    for repository, statements in local.statements : repository => [
+      for index in range(ceil(length(statements) / local.statements_per_policy)) :
+      "{\"Version\":\"2012-10-17\",\"Statement\":[${join(",", slice(
+        statements,
+        index * local.statements_per_policy,
+        min(length(statements), (index + 1) * local.statements_per_policy)
+      ))}]}"
+    ]
+  }
+
+  # One entry per managed policy. The keys use only the repository and the
+  # policy's position, both known at plan.
+  managed_policies = merge([
+    for repository, chunks in local.policy_chunks : {
+      for index, document in chunks : "${repository}#${index + 1}" => {
+        repository = repository
+        name       = "${var.project_name}-${var.environment}-${local.ctx[repository].service}-${local.ctx[repository].kind}-${index + 1}"
+        document   = document
+      }
+    }
+  ]...)
+
+  # Each policy's ARN, built rather than read from the resource: the OIDC module
+  # keys its attachments by ARN, and a resource's ARN is unknown until it exists,
+  # which a first plan cannot use. IAM's format is arn:aws:iam::<account>:policy
+  # <path><name>; were it ever different, attaching would fail at apply with
+  # IAM's own "no such policy" error.
+  managed_policy_path = "/platform/service-roles/"
+
+  managed_policy_arns = {
+    for key, policy in local.managed_policies : key => "${local.iam}:policy${local.managed_policy_path}${policy.name}"
+  }
+
+  too_many_policies = [
+    for repository, chunks in local.policy_chunks : repository if length(chunks) > local.managed_policies_limit
+  ]
 
   oversized_policies = [
-    for repository, policy in local.policies : repository if length(policy) > local.inline_policy_limit
+    for key, policy in local.managed_policies : key if length(policy.document) > local.managed_policy_limit
   ]
+}
+
+resource "aws_iam_policy" "service" {
+  for_each = local.managed_policies
+
+  name        = each.value.name
+  path        = local.managed_policy_path
+  description = "Part of the CI permissions of ${each.value.repository} (service ${local.ctx[each.value.repository].service}, ${local.ctx[each.value.repository].kind}) in ${var.environment}. Generated by core; do not edit."
+  policy      = each.value.document
+
+  depends_on = [terraform_data.service_roles_invariants]
+
+  lifecycle {
+    # Known only once every value in the statements is: checked at apply, before
+    # IAM would refuse it.
+    precondition {
+      condition     = length(each.value.document) <= local.managed_policy_limit
+      error_message = "${each.value.name} is ${length(each.value.document)} characters, over IAM's ${local.managed_policy_limit} for a managed policy. Lower statements_per_policy in modules/platform/service-roles/main.tf rather than trimming what the role needs."
+    }
+  }
 }
 
 module "identity" {
@@ -840,8 +915,13 @@ resource "terraform_data" "service_roles_invariants" {
     }
 
     precondition {
+      condition     = length(local.too_many_policies) == 0
+      error_message = "These roles would need more than IAM's ${local.managed_policies_limit} managed policies: ${join(", ", local.too_many_policies)}. Raise statements_per_policy in modules/platform/service-roles/main.tf if every policy still fits ${local.managed_policy_limit} characters, or ask AWS to raise the limit."
+    }
+
+    precondition {
       condition     = length(local.oversized_policies) == 0
-      error_message = "These generated policies exceed IAM's ${local.inline_policy_limit}-character limit for a role's inline policies: ${join(", ", local.oversized_policies)}. Split them into managed policies (6,144 characters each) rather than trimming what a role legitimately needs."
+      error_message = "These generated policies exceed IAM's ${local.managed_policy_limit}-character limit for a managed policy: ${join(", ", local.oversized_policies)}. Lower statements_per_policy in modules/platform/service-roles/main.tf rather than trimming what a role legitimately needs."
     }
 
     precondition {
