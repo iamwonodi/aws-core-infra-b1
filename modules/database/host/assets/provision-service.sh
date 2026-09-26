@@ -217,6 +217,10 @@ echo "Connection limits: ${SERVICE} ${SERVICE_CONNECTION_LIMIT}, each person ${P
 # Provision
 # ------------------------------------------------------------------------------
 
+# A replaced administrator password reaches a running engine only through this:
+# everything below signs in as the administrator.
+bash "${SCRIPT_DIR}/sync-admin-password.sh" "${ENGINE}"
+
 echo "Creating the database and user for '${SERVICE}' on ${ENGINE}."
 
 bash "${SCRIPT_DIR}/provision.sh" "${CONFIG_FILE}" "${INIT_SCRIPT}" admin

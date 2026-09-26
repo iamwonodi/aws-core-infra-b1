@@ -166,6 +166,22 @@ In production a service's agents are read-only unless listed in `infrastructure/
 
 **Signing in to the tools** (development and staging): everyone on the platform list, and every agent a service declares, gets a sign-in automatically, and Cognito emails them an invitation. To see or re-run what the front door did, look at (or invoke) the `<project>-<env>-front-door` function; it changes nothing if any declaration is unreadable, and says which.
 
+## Changing an administrator password
+
+Each engine's administrator is the emergency way in, and core's provisioning signs in with it. To give one a new password, replace its generated password and apply core in that environment:
+
+| Environment | Replace |
+| --- | --- |
+| Development (every engine on the host shares one) | `terraform apply -replace='module.database.random_password.db_password'` |
+| Staging, production | `terraform apply -replace='random_password.database_admin["postgres"]'` (or `"mysql"`, `"mongodb"`) |
+
+What then reaches the engine:
+
+- **Staging and production:** Terraform sets the new master password on the instance. RDS applies it at once; DocumentDB too, because core sets `apply_immediately` on it (without that it would wait for the weekly maintenance window).
+- **Development:** the engines read their password only when first created, so core's apply runs `sync-admin-password.sh` on the host at its end, before the people step: it signs in with the secret's previous version (Secrets Manager keeps it) and sets the new one. A service's provisioning does the same for its engine first.
+
+**Replace one password per apply, and let that apply finish.** In development the sync needs the engine's password to be the secret's current or previous version: replaced twice before the sync ran, it is neither, and provisioning stops with *matches neither the secret's current nor its previous version*. To recover then, on the host (Session Manager): PostgreSQL needs nothing (the sync signs in over the container's socket); for MySQL or MongoDB, find the password the engine still has in the secret's older versions (`aws secretsmanager list-secret-version-ids`, then `get-secret-value --version-id`), and set it as the engine's with `ALTER USER CURRENT_USER() IDENTIFIED BY '<current>'` (MySQL) or `db.changeUserPassword('admin', '<current>')` (MongoDB), signed in with the old one.
+
 ## If it stops
 
 | Symptom | Usually |
@@ -177,6 +193,7 @@ In production a service's agents are read-only unless listed in `infrastructure/
 | `ParameterNotFound` for `/services/<service>/config` | service-infra has not applied in this environment |
 | `could not read the database port` | development only: no engine is registered (step 3) |
 | provisioning fails | development: the engine is not running. Staging and production: read the function's log, printed in the workflow |
+| *matches neither the secret's current nor its previous version* | development: an administrator password was replaced twice before the host saw it (*Changing an administrator password*) |
 | `no host answered` on deploy | the hosts have not finished booting, or are not tagged `Project`/`Service` as expected |
 | a tag was pushed and nothing built | `RELEASE_TOKEN` is missing |
 

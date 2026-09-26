@@ -72,6 +72,13 @@ resource "aws_s3_object" "database_provision_people" {
   etag   = filemd5(local.provision_people_script_path)
 }
 
+resource "aws_s3_object" "database_sync_admin" {
+  bucket = var.deploy_bucket_name
+  key    = local.database_sync_admin_key
+  source = local.sync_admin_script_path
+  etag   = filemd5(local.sync_admin_script_path)
+}
+
 # Core's per-engine provisioning scripts, fetched by the host exactly like the
 # rest of its platform scripts and verified against the same manifest.
 resource "aws_s3_object" "database_provisioning_scripts" {
@@ -95,6 +102,7 @@ resource "aws_ssm_parameter" "database_scripts_manifest" {
     aws_s3_object.database_provision,
     aws_s3_object.database_provision_service,
     aws_s3_object.database_provision_people,
+    aws_s3_object.database_sync_admin,
     aws_s3_object.database_provisioning_scripts,
   ]
 }
@@ -178,6 +186,10 @@ resource "aws_ssm_document" "database_provision" {
 # running engine in line with the people secret. Core's apply sends it after
 # applying; permission to send it is not permission to run arbitrary commands on the
 # database host. It takes no parameters: the only input is the people secret.
+#
+# First it brings each engine's administrator password in line with core's
+# secret (sync-admin-password.sh), so an apply that replaced that password has
+# taken effect before anything signs in as the administrator.
 resource "aws_ssm_document" "database_provision_people" {
   name            = local.provision_people_document_name
   document_type   = "Command"
@@ -193,7 +205,7 @@ resource "aws_ssm_document" "database_provision_people" {
         name   = "provisionPeople"
         inputs = {
           timeoutSeconds = "600"
-          runCommand     = ["${local.database_workspace}/provision-people.sh platform"]
+          runCommand     = ["${local.database_workspace}/sync-admin-password.sh && ${local.database_workspace}/provision-people.sh platform"]
         }
       }
     ]

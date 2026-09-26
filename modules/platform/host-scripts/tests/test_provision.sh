@@ -19,7 +19,7 @@ setup(){
   rm -rf "$FAKE_ROOT" "$WS"
   mkdir -p "$FAKE_ROOT"/{secrets,s3/b,compose-state,ssm} "$WS"
   : > "$FAKE_ROOT/calls.log"
-  cp "$A/provision.sh" "$A/provision-service.sh" "$A/provision-people.sh" "$WS/"
+  cp "$A/provision.sh" "$A/provision-service.sh" "$A/provision-people.sh" "$A/sync-admin-password.sh" "$WS/"
   # The platform scripts are installed flat in the workspace, as the fetch does.
   cp "$A"/provisioning/* "$WS/"
   cat > "$WS/.env" <<E
@@ -61,62 +61,63 @@ run auth > "$WORK/out.txt" 2>&1; rc=$?
 check "succeeds"                                          test $rc -eq 0
 # 1 the standard script; 2-3 the service's agents (a query, a script);
 # 4-6 the platform's people (two queries, a script).
-check "the standard script, then both people steps"       test "$(execs)" = 6
+check "the sync, the standard script, both people steps"       test "$(execs)" = 7
 script_has(){ execn "$1" | jq -r .stdin | grep -qF "$2" && execn "$1" | jq -r '.args | join(" ")' | grep -q "container-db-postgres"; }
-check "then the service's own agents, on the same engine" script_has 3 'ALTER ROLE "auth.bob"'
-check "  given only the service's database"               bash -c "execn 3 | jq -r .stdin | grep -q 'GRANT CONNECT ON DATABASE \"auth\" TO \"auth.group_read\"' && [[ \$(execn 3 | jq -r .stdin | grep -c 'GRANT CONNECT ON DATABASE') == 1 ]]"
-check "then the platform's people"                        script_has 6 'ALTER ROLE "platform.ada"'
-check "it ran against the engine's own container"         bash -c "execn 1 | jq -e '.args | index(\"container-db-postgres\") != null' >/dev/null"
-check "as the administrator (psql -U postgres)"           bash -c "execn 1 | jq -e '(.args | index(\"postgres\")) != null and (.args | index(\"psql\")) != null' >/dev/null"
-check "psql stops on the first error"                     bash -c "execn 1 | jq -e '.args | index(\"ON_ERROR_STOP=1\") != null' >/dev/null"
-check "the credentials came from the service's secret"    bash -c "execn 1 | jq -r .stdin | grep -q \"set target_user 'auth'\" && execn 1 | jq -r .stdin | grep -q 's3cret-pw.x'"
-check "core's own SQL was what ran"                       bash -c "execn 1 | jq -r .stdin | grep -q 'CREATE DATABASE' && execn 1 | jq -r .stdin | grep -q 'REVOKE ALL ON DATABASE'"
+check "then the service's own agents, on the same engine" script_has 4 'ALTER ROLE "auth.bob"'
+check "  given only the service's database"               bash -c "execn 4 | jq -r .stdin | grep -q 'GRANT CONNECT ON DATABASE \"auth\" TO \"auth.group_read\"' && [[ \$(execn 4 | jq -r .stdin | grep -c 'GRANT CONNECT ON DATABASE') == 1 ]]"
+check "then the platform's people"                        script_has 7 'ALTER ROLE "platform.ada"'
+check "first the administrator password is synced, for this engine" bash -c "execn 1 | jq -r .stdin | grep -qx \"ALTER ROLE postgres WITH PASSWORD 'R00t-pw.1';\""
+check "it ran against the engine's own container"         bash -c "execn 2 | jq -e '.args | index(\"container-db-postgres\") != null' >/dev/null"
+check "as the administrator (psql -U postgres)"           bash -c "execn 2 | jq -e '(.args | index(\"postgres\")) != null and (.args | index(\"psql\")) != null' >/dev/null"
+check "psql stops on the first error"                     bash -c "execn 2 | jq -e '.args | index(\"ON_ERROR_STOP=1\") != null' >/dev/null"
+check "the credentials came from the service's secret"    bash -c "execn 2 | jq -r .stdin | grep -q \"set target_user 'auth'\" && execn 2 | jq -r .stdin | grep -q 's3cret-pw.x'"
+check "core's own SQL was what ran"                       bash -c "execn 2 | jq -r .stdin | grep -q 'CREATE DATABASE' && execn 2 | jq -r .stdin | grep -q 'REVOKE ALL ON DATABASE'"
 check "the request was fetched from the service's prefix" grep -q 'provisioning/auth/config.json' "$FAKE_ROOT/calls.log"
 check "no secret value is printed"                        bash -c "! grep -q 's3cret-pw.x' '$WORK/out.txt'"
 
 echo "== running it again (Terraform triggers every apply)"
 before="$(execs)"; run auth >/dev/null 2>&1
 check "is still successful"                               test $? -eq 0
-check "and runs the same script and people steps again"  test "$(execs)" = $((before + 6))
+check "and runs the sync, script and people steps again"  test "$(execs)" = $((before + 7))
 
 echo "== the service's own extra SQL"
 setup; request auth postgres; extra auth 'CREATE EXTENSION IF NOT EXISTS pg_trgm;'
 run auth >/dev/null 2>&1
-check "the standard script, the extra, then people"      test "$(execs)" = 7
-check "the extra runs as the SERVICE's user, not postgres" bash -c "execn 2 | jq -e '(.args | index(\"auth\")) != null and (.args | index(\"postgres\") == null)' >/dev/null"
-check "on the service's own database"                     bash -c "execn 2 | jq -e '.args | index(\"-d\") != null' >/dev/null"
-check "with the service's password, never root's"         bash -c "execn 2 | jq -r '.args | join(\" \")' | grep -q 's3cret-pw.x' && ! execn 2 | jq -r '.args | join(\" \")' | grep -q 'R00t-pw.1'"
+check "the sync, standard script, extra, then people"   test "$(execs)" = 8
+check "the extra runs as the SERVICE's user, not postgres" bash -c "execn 3 | jq -e '(.args | index(\"auth\")) != null and (.args | index(\"postgres\") == null)' >/dev/null"
+check "on the service's own database"                     bash -c "execn 3 | jq -e '.args | index(\"-d\") != null' >/dev/null"
+check "with the service's password, never root's"         bash -c "execn 3 | jq -r '.args | join(\" \")' | grep -q 's3cret-pw.x' && ! execn 3 | jq -r '.args | join(\" \")' | grep -q 'R00t-pw.1'"
 setup; request auth postgres; extra auth 'SELECT 1;'
 check "a failing extra script fails the run"              bash -c "! FAKE_EXEC_FAIL=1 run auth >/dev/null 2>&1"
 
 echo "== other engines"
 setup; request auth mysql; echo running > "$FAKE_ROOT/compose-state/db-mysql"
 run auth >/dev/null 2>&1
-check "mysql: runs as root with MYSQL_PWD, not -p"        bash -c "execn 1 | jq -r '.args | join(\" \")' | grep -q 'MYSQL_PWD=R00t-pw.1' && execn 1 | jq -e '.args | index(\"-uroot\") != null' >/dev/null"
-check "mysql: core's SQL, with identifiers prepared"      bash -c "execn 1 | jq -r .stdin | grep -q 'CREATE DATABASE IF NOT EXISTS' && execn 1 | jq -r .stdin | grep -q 'PREPARE statement'"
+check "mysql: runs as root with MYSQL_PWD, not -p"        bash -c "execn 2 | jq -r '.args | join(\" \")' | grep -q 'MYSQL_PWD=R00t-pw.1' && execn 2 | jq -e '.args | index(\"-uroot\") != null' >/dev/null"
+check "mysql: core's SQL, with identifiers prepared"      bash -c "execn 2 | jq -r .stdin | grep -q 'CREATE DATABASE IF NOT EXISTS' && execn 2 | jq -r .stdin | grep -q 'PREPARE statement'"
 setup; request auth mongodb; echo running > "$FAKE_ROOT/compose-state/db-mongodb"
 run auth >/dev/null 2>&1
-check "mongodb: runs mongosh as the administrator"        bash -c "execn 1 | jq -e '.args | index(\"mongosh\") != null' >/dev/null && execn 1 | jq -r .stdin | grep -q 'createUser'"
-check "mongodb: the user lives in admin, as DocumentDB's do" bash -c "execn 1 | jq -r .stdin | grep -q 'getSiblingDB(\"admin\")' && execn 1 | jq -r .stdin | grep -q 'role: \"readWrite\", db: target_db'"
+check "mongodb: runs mongosh as the administrator"        bash -c "execn 2 | jq -e '.args | index(\"mongosh\") != null' >/dev/null && execn 2 | jq -r .stdin | grep -q 'createUser'"
+check "mongodb: the user lives in admin, as DocumentDB's do" bash -c "execn 2 | jq -r .stdin | grep -q 'getSiblingDB(\"admin\")' && execn 2 | jq -r .stdin | grep -q 'role: \"readWrite\", db: target_db'"
 
 echo "== connection limits"
 setup; request auth postgres
 run auth > "$WORK/out.txt" 2>&1
-check "the service gets the default"                     bash -c "execn 1 | jq -r .stdin | grep -qx '\\\\set target_limit 20'"
-check "  and core's SQL sets it"                         bash -c "execn 1 | jq -r .stdin | grep -q 'CONNECTION LIMIT %s'"
-check "its agents get the person cap"                     bash -c "execn 3 | jq -r .stdin | grep -qF 'ALTER ROLE \"auth.bob\" CONNECTION LIMIT 5;'"
-check "the platform's people too"                         bash -c "execn 6 | jq -r .stdin | grep -qF 'ALTER ROLE \"platform.ada\" CONNECTION LIMIT 5;'"
+check "the service gets the default"                     bash -c "execn 2 | jq -r .stdin | grep -qx '\\\\set target_limit 20'"
+check "  and core's SQL sets it"                         bash -c "execn 2 | jq -r .stdin | grep -q 'CONNECTION LIMIT %s'"
+check "its agents get the person cap"                     bash -c "execn 4 | jq -r .stdin | grep -qF 'ALTER ROLE \"auth.bob\" CONNECTION LIMIT 5;'"
+check "the platform's people too"                         bash -c "execn 7 | jq -r .stdin | grep -qF 'ALTER ROLE \"platform.ada\" CONNECTION LIMIT 5;'"
 check "the limits are read once for the whole run"        test "$(grep -c 'ssm get-parameter' "$FAKE_ROOT/calls.log")" = 1
 check "and named in the log"                              grep -q 'Connection limits: auth 20, each person 5' "$WORK/out.txt"
 setup; request billing postgres
 run billing >/dev/null 2>&1
-check "an approved exception replaces the default"        bash -c "execn 1 | jq -r .stdin | grep -qx '\\\\set target_limit 40'"
+check "an approved exception replaces the default"        bash -c "execn 2 | jq -r .stdin | grep -qx '\\\\set target_limit 40'"
 setup; request auth mysql; echo running > "$FAKE_ROOT/compose-state/db-mysql"
 run auth >/dev/null 2>&1
-check "mysql: the service gets the default"               bash -c "execn 1 | jq -r .stdin | grep -qx 'SET @target_limit=20;' && execn 1 | jq -r .stdin | grep -q 'WITH MAX_USER_CONNECTIONS'"
+check "mysql: the service gets the default"               bash -c "execn 2 | jq -r .stdin | grep -qx 'SET @target_limit=20;' && execn 2 | jq -r .stdin | grep -q 'WITH MAX_USER_CONNECTIONS'"
 setup; request auth mongodb; echo running > "$FAKE_ROOT/compose-state/db-mongodb"
 run auth >/dev/null 2>&1
-check "mongodb: no limit, it has none per login"          bash -c "! execn 1 | jq -r .stdin | grep -q 'limit'"
+check "mongodb: no limit, it has none per login"          bash -c "! execn 2 | jq -r .stdin | grep -q 'limit'"
 setup; request auth postgres; rm "$FAKE_ROOT/ssm/core__database__connection-limits"
 check "no limits parameter: refused"                      bash -c "! run auth >/dev/null 2>&1"
 check "  and nothing reached the engine"                  test "$(execs)" = 0
@@ -131,6 +132,11 @@ for bad in '{"service_default":0,"person":5,"service_exceptions":{}}' \
 done
 setup; request auth postgres
 check "provision.sh alone refuses to run without a limit" bash -c "! bash '$WS/provision.sh' '$FAKE_ROOT/s3/b/provisioning/auth/config.json' '$WS/provision-postgres.sql' admin >/dev/null 2>&1"
+
+setup; request auth mysql; echo running > "$FAKE_ROOT/compose-state/db-mysql"; export FAKE_EXEC_FAIL_ON=1,2
+printf '%s' '{"username":"admin","root_password":"Old-pw.0"}' > "$FAKE_ROOT/secrets/arn_core.AWSPREVIOUS"
+run auth > "$WORK/out.txt" 2>&1; rc=$?; unset FAKE_EXEC_FAIL_ON
+check "an administrator password that cannot be synced stops provisioning" bash -c "[[ $rc -ne 0 ]] && [[ \$(ls '$FAKE_ROOT/exec' | wc -l) == 2 ]] && grep -q 'matches neither' '$WORK/out.txt'"
 
 echo "== refusals"
 setup

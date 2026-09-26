@@ -55,6 +55,7 @@ jobs:
             modules/database/host/assets/provision.sh \
             modules/database/host/assets/provision-service.sh \
             modules/database/host/assets/provision-people.sh \
+            modules/database/host/assets/sync-admin-password.sh \
             scripts/*.sh \
             scripts/ci/*.sh
 

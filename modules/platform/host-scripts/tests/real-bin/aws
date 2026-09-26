@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# aws for the real-server people test: secrets come from $REAL_SECRETS/<id>,
+# aws for the real-server tests: secrets come from $REAL_SECRETS/<id>,
 # parameters from $REAL_SSM.
 if [[ "$1 $2" == "secretsmanager get-secret-value" ]]; then
-  while [[ $# -gt 0 ]]; do [[ "$1" == "--secret-id" ]] && id="$2"; shift; done
+  stage=""
+  while [[ $# -gt 0 ]]; do [[ "$1" == "--secret-id" ]] && id="$2"; [[ "$1" == "--version-stage" ]] && stage="$2"; shift; done
+  # A version other than the current one is <id>.<stage>, e.g. arn_core.AWSPREVIOUS.
+  [[ -n "${stage}" && "${stage}" != "AWSCURRENT" ]] && id="${id}.${stage}"
   [[ -f "${REAL_SECRETS}/${id}" ]] || { echo "ResourceNotFoundException: ${id}" >&2; exit 254; }
   cat "${REAL_SECRETS}/${id}"; echo; exit 0
 fi

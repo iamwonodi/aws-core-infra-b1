@@ -62,11 +62,13 @@ locals {
   database_provision_key         = "_platform/database/provision.sh"
   database_provision_service_key = "_platform/database/provision-service.sh"
   database_provision_people_key  = "_platform/database/provision-people.sh"
+  database_sync_admin_key        = "_platform/database/sync-admin-password.sh"
 
   update_script_path            = "${path.module}/assets/update.sh"
   provision_script_path         = "${path.module}/assets/provision.sh"
   provision_service_script_path = "${path.module}/assets/provision-service.sh"
   provision_people_script_path  = "${path.module}/assets/provision-people.sh"
+  sync_admin_script_path        = "${path.module}/assets/sync-admin-password.sh"
 
   # Core's own provisioning script per engine: what actually creates a service's
   # database, user, password and grants. Core owns them so that every service is
@@ -91,6 +93,7 @@ locals {
       (local.database_provision_key)         = filesha256(local.provision_script_path)
       (local.database_provision_service_key) = filesha256(local.provision_service_script_path)
       (local.database_provision_people_key)  = filesha256(local.provision_people_script_path)
+      (local.database_sync_admin_key)        = filesha256(local.sync_admin_script_path)
     },
     { for key, path in local.provisioning_scripts : key => filesha256(path) },
   )

@@ -447,6 +447,13 @@ module "documentdb" {
   master_username = local.database_admin_username
   master_password = random_password.database_admin["mongodb"].result
 
+  # DocumentDB applies a new master password only in the next maintenance window
+  # unless changes apply at once, and the secret changes at once: until the two
+  # agreed, provisioning and the tools would be refused. (RDS applies a new
+  # password at once regardless.) This also applies other cluster and instance
+  # changes, such as a new instance class, at the end of the apply that makes them.
+  apply_immediately = true
+
   instance_count = var.documentdb_instance_count
   instance_class = var.documentdb_instance_class
 

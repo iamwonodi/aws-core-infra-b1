@@ -162,6 +162,17 @@ Each login may hold only so many connections open at the same moment: a service'
 
 A parameter rather than the host's `.env`: the `.env` is part of the user data, and changing it would restart the database host. So a changed number needs no restart and no script refresh; it applies the next time the login is provisioned. A missing parameter or a number that is not a whole number from 1 to 10000 stops the run before anything reaches an engine.
 
+### The administrator password
+
+The engine images read their administrator password (`root_password` in this module's secret) only when their data folder is first created, so a replaced password would never reach a running engine by itself. `sync-admin-password.sh` makes each running engine's administrator password the secret's current one:
+
+| Engine | How |
+| --- | --- |
+| PostgreSQL | Set every run, over the container's local socket, where the image trusts `postgres` without a password |
+| MySQL, MongoDB | Nothing if the current password works; otherwise it signs in with the secret's previous version (`AWSPREVIOUS`, which Secrets Manager keeps whenever the value changes) and sets the current one |
+
+It runs at the end of core's apply (the `<project>-database-provision-people` document runs it before the people step) and in `provision-service.sh` before a service is provisioned. A password matching neither version (replaced twice before the host saw it, or changed by hand) stops the run with a message; the runbook's *Changing an administrator password* says how to recover. Tests: `modules/platform/host-scripts/tests/test_sync_admin.sh` (offline) and `test_sync_admin_real.sh` (real PostgreSQL and MySQL).
+
 ## Inputs this module needs from elsewhere
 
 This module owns no networking, compute-image, DNS-zone or bucket resources of its own. Six inputs come from other domain modules' outputs:
@@ -242,6 +253,7 @@ database/
 │   ├── env.tftpl        -- runtime env template
 │   ├── bootstrap.sh     -- user data: data volume, workspace, .env, fetch scripts, first deploy
 │   ├── update.sh        -- syncs the platforms team's registry and engines and runs them
-│   └── provision.sh     -- creates a service's database and user inside an engine
+│   ├── provision.sh     -- creates a service's database and user inside an engine
+│   └── sync-admin-password.sh -- makes each engine's administrator password the secret's current one
 └── README.md
 ```

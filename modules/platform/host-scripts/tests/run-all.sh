@@ -8,7 +8,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 failed=0
 
-for suite in test_lib.sh test_fetch.sh test_fleet.sh test_db.sh test_provision.sh test_people.sh test_people_real.sh test_device.sh; do
+for suite in test_lib.sh test_fetch.sh test_fleet.sh test_db.sh test_provision.sh test_people.sh test_people_real.sh test_sync_admin.sh test_sync_admin_real.sh test_device.sh; do
   echo "################ ${suite}"
   bash "./${suite}" < /dev/null || failed=1
 done
