@@ -4,6 +4,7 @@ set -euo pipefail
 
 # Git Bash on Windows needs a little help: see scripts/common/git-bash.sh.
 source "$(dirname "${BASH_SOURCE[0]}")/common/git-bash.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/common/github-repo.sh"
 
 # ==============================================================================
 # BOOTSTRAP ENVIRONMENT
@@ -177,6 +178,10 @@ ensure_repo_pushed() {
 
 if [[ "${SET_SECRETS}" == "true" ]]; then
   ensure_repo_pushed
+  # Every gh call below names this repository: see scripts/common/github-repo.sh.
+  GITHUB_REPO="$(origin_repository "${REPO_ROOT}")" \
+    || { echo "ERROR: no origin remote to set GitHub Environment values on." >&2; exit 1; }
+  echo "GitHub repository: ${GITHUB_REPO}"
   echo ""
 fi
 
@@ -368,7 +373,7 @@ sync_local_config_file() {
     fi
 
     echo "  Setting ${GH_SUBCOMMAND} ${KEY} for ${ENV_NAME}"
-    gh "${GH_SUBCOMMAND}" set "${KEY}" --body "${VALUE}" --env "${ENV_NAME}"
+    gh "${GH_SUBCOMMAND}" set "${KEY}" --repo "${GITHUB_REPO}" --body "${VALUE}" --env "${ENV_NAME}"
   done < "${FILE}"
 }
 
@@ -464,7 +469,7 @@ bootstrap_environment() {
         local TARGET_ENV
         for TARGET_ENV in "${ENV_NAME}" "${ENV_NAME}-plan"; do
           echo "  Setting secret TF_AWS_ROLE_ARN for ${TARGET_ENV}"
-          if ! gh secret set TF_AWS_ROLE_ARN --body "${CORE_ARN}" --env "${TARGET_ENV}"; then
+          if ! gh secret set TF_AWS_ROLE_ARN --repo "${GITHUB_REPO}" --body "${CORE_ARN}" --env "${TARGET_ENV}"; then
             echo "ERROR: could not set the secret on GitHub Environment ${TARGET_ENV}." >&2
             echo "       Create the environments first: scripts/init-project.sh" >&2
             exit 1

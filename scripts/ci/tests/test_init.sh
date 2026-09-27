@@ -38,8 +38,11 @@ echo "== GitHub environments"
 fresh; run >/dev/null 2>&1
 for e in development development-plan staging staging-plan production production-plan; do
   check "environment $e configured"                    grep -q "^gh api -X PUT repos/acme/widgets/environments/$e --input -" "${FAKE_GH_LOG}"
-  check "AWS_REGION set on $e"                         grep -q "^gh variable set AWS_REGION --env $e --body eu-west-1" "${FAKE_GH_LOG}"
+  check "AWS_REGION set on $e"                         grep -q "^gh variable set AWS_REGION --repo acme/widgets --env $e --body eu-west-1" "${FAKE_GH_LOG}"
 done
+fresh; git -C "${WORK}/repo" remote add upstream https://github.com/acme/blueprint.git; out="$(run 2>&1)"
+check "an upstream remote does not redirect writes"   bash -c "! grep -q blueprint '${FAKE_GH_LOG}' && [ \"\$(grep -c '^gh variable set .*--repo acme/widgets ' '${FAKE_GH_LOG}')\" = 6 ]"
+check "GitHub's JSON replies are not printed"         bash -c "! grep -q '{}' <<< \"\$1\"" _ "${out}"
 body_of(){ grep -A1 "environments/$1 --input" "${FAKE_GH_LOG}" | grep '^BODY' | head -1 | sed 's/^BODY //'; }
 check "development has no reviewers"                   bash -c "echo '$(body_of development)' | jq -e '.reviewers == []' >/dev/null"
 check "development-plan has no reviewers"              bash -c "echo '$(body_of development-plan)' | jq -e '.reviewers == []' >/dev/null"

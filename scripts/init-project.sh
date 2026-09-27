@@ -3,6 +3,7 @@ set -euo pipefail
 
 # Git Bash on Windows needs a little help: see scripts/common/git-bash.sh.
 source "$(dirname "${BASH_SOURCE[0]}")/common/git-bash.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/common/github-repo.sh"
 
 # ==============================================================================
 # INITIALISE A CLONE OF THIS BLUEPRINT FOR A REAL PROJECT
@@ -181,9 +182,8 @@ if [[ "${SKIP_GITHUB}" != "true" && "${DRY_RUN}" != "true" ]]; then
 fi
 
 if [[ -z "${REPO}" && "${SKIP_GITHUB}" != "true" ]]; then
-  REMOTE_URL="$(git -C "${REPO_ROOT}" remote get-url origin 2>/dev/null || true)"
-  [[ -n "${REMOTE_URL}" ]] || { echo "ERROR: no origin remote; pass --repo OWNER/REPOSITORY." >&2; exit 1; }
-  REPO="$(sed -E 's#^(https?://[^/]+/|git@[^:]+:|ssh://[^/]+/)##; s#\.git$##; s#/$##' <<< "${REMOTE_URL}")"
+  REPO="$(origin_repository "${REPO_ROOT}")" \
+    || { echo "ERROR: no origin remote; pass --repo OWNER/REPOSITORY." >&2; exit 1; }
 fi
 
 domain_for() {
@@ -284,7 +284,8 @@ gh_call() {
     if [[ "$*" == *"--input -"* ]]; then cat > /dev/null; fi
     return 0
   fi
-  gh "${@:2}"
+  # GitHub's JSON replies are not needed; errors still reach stderr.
+  gh "${@:2}" >/dev/null
 }
 
 reviewer_json() {
@@ -323,7 +324,7 @@ configure_environment() {
       | gh_call "branch policy ${name}" api -X POST "repos/${REPO}/environments/${name}/deployment-branch-policies" --input - 2>/dev/null || true
   fi
 
-  gh_call "AWS_REGION ${name}" variable set AWS_REGION --env "${name}" --body "${REGION}" >/dev/null
+  gh_call "AWS_REGION ${name}" variable set AWS_REGION --repo "${REPO}" --env "${name}" --body "${REGION}"
 }
 
 configure_github() {

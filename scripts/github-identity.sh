@@ -3,6 +3,7 @@ set -euo pipefail
 
 # Git Bash on Windows needs a little help: see scripts/common/git-bash.sh.
 source "$(dirname "${BASH_SOURCE[0]}")/common/git-bash.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/common/github-repo.sh"
 
 # ==============================================================================
 # PRINT THE TERRAFORM VARIABLES THAT IDENTIFY THIS GITHUB REPOSITORY
@@ -59,15 +60,10 @@ for command in gh jq; do
 done
 
 if [[ -z "${REPO}" ]]; then
-  REMOTE_URL="$(git remote get-url origin 2>/dev/null || true)"
-
-  if [[ -z "${REMOTE_URL}" ]]; then
+  if ! REPO="$(origin_repository .)"; then
     echo "ERROR: no origin remote to read the repository from. Pass --repo OWNER/REPO." >&2
     exit 1
   fi
-
-  # https://github.com/OWNER/REPO(.git)  or  git@github.com:OWNER/REPO(.git)
-  REPO="$(sed -E 's#^(https?://[^/]+/|git@[^:]+:|ssh://[^/]+/)##; s#\.git$##; s#/$##' <<< "${REMOTE_URL}")"
 fi
 
 if ! [[ "${REPO}" =~ ^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$ ]]; then
