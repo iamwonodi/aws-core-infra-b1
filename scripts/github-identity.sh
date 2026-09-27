@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Git Bash on Windows needs a little help: see scripts/common/git-bash.sh.
+source "$(dirname "${BASH_SOURCE[0]}")/common/git-bash.sh"
+
 # ==============================================================================
 # PRINT THE TERRAFORM VARIABLES THAT IDENTIFY THIS GITHUB REPOSITORY
 #

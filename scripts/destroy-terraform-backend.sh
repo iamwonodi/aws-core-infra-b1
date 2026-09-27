@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+# Git Bash on Windows needs a little help: see scripts/common/git-bash.sh.
+source "$(dirname "${BASH_SOURCE[0]}")/common/git-bash.sh"
+
 # ==============================================================================
 # DESTROY TERRAFORM STATE BUCKET
 #

@@ -62,6 +62,7 @@ scripts/
   init-project.sh           set a clone's project values and prepare GitHub
   bootstrap-environment.sh  one-time setup of an environment's first role
   github-identity.sh        print this repository's identity for Terraform
+  common/git-bash.sh        what those scripts need under Git Bash on Windows
   ci/                       scripts the workflows call, with tests
 local-config/             templates for values you set once
 docs/                     first-apply guide, platform contract, decision log
