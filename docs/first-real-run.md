@@ -10,7 +10,7 @@ Everything here has been built and tested offline (mocked AWS, fake command-line
 
 ## 1. Core, development first (`docs/first-apply.md`)
 
-- [ ] **The first plan** of a fresh environment: provider arguments, and every `for_each` keyed by names known at plan time (the modules fixed for this were released as nacl-security v1.0.2, profile v1.1.1, rds-instance v1.0.1, documentdb v1.0.1).
+- [ ] **The first plan** of a fresh environment: provider arguments, and every `for_each` keyed by names known at plan time (the modules fixed for this were released as nacl-security v1.0.2, profile v1.1.1, rds-instance v1.0.1, documentdb v1.0.1; the first real development plan then found six more, fixed in acm v1.0.1, s3 v1.0.1, vpc-endpoints v1.0.1, load-balancer v1.1.0, compute v1.2.0 and compute-storage v1.2.0, with each fix covered by a plan test in its module).
 - [ ] **The golden image builds** with Docker, Compose, the AWS CLI and Python (staging and production now set them, like development).
 - [ ] **The network:** a request through CloudFront reaches a service (the load balancers' outbound rules); the database host is reachable by SSM, fetches its scripts from S3 and pulls from ECR (the isolated tier's outbound rules and network ACL).
 - [ ] **The database host** (development) starts, and the engines repository's first deploy runs (section 2).

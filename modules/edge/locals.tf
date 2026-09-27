@@ -5,6 +5,19 @@ locals {
   internal_alb_name           = "internal-alb"
   internal_alb_sg_description = "Security group for the internal-tier ALB, reached only from the private tier's backend API."
 
+  # Load balancer names. AWS caps them at 32 characters, so they use a short
+  # form of the environment: with the longest project name init-project allows
+  # (16 characters), "<project>-<env>-priv" is at most 25. tests/names.tftest.hcl
+  # checks every environment at that length.
+  environment_short = lookup(
+    { development = "dev", staging = "stg", production = "prd" },
+    var.environment,
+    var.environment
+  )
+
+  private_load_balancer_name  = "${var.project_name}-${local.environment_short}-priv"
+  internal_load_balancer_name = "${var.project_name}-${local.environment_short}-int"
+
   cloudfront_aliases = [
     var.domain_name,
     "www.${var.domain_name}",

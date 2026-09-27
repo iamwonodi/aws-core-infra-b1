@@ -31,6 +31,9 @@ on:
       - "modules/network/variables.tf"
       - "modules/network/validations.tf"
       - "modules/network/tests/**"
+      - "modules/edge/variables.tf"
+      - "modules/edge/locals.tf"
+      - "modules/edge/tests/**"
       - ".github/workflows/terraform-module-tests.yml"
   push:
     branches:
@@ -48,6 +51,9 @@ on:
       - "modules/network/variables.tf"
       - "modules/network/validations.tf"
       - "modules/network/tests/**"
+      - "modules/edge/variables.tf"
+      - "modules/edge/locals.tf"
+      - "modules/edge/tests/**"
       - ".github/workflows/terraform-module-tests.yml"
 
 permissions:
@@ -124,3 +130,6 @@ jobs:
 
       - name: network invariants
         run: bash modules/network/tests/run.sh
+
+      - name: edge load balancer names
+        run: bash modules/edge/tests/run.sh

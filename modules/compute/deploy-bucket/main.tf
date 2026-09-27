@@ -17,7 +17,7 @@
 ################################################################################
 
 module "bucket" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-s3.git?ref=v1.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-s3.git?ref=v1.0.1"
 
   bucket_name = local.bucket_name
 

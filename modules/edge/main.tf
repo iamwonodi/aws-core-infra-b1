@@ -10,7 +10,7 @@
 ########################################################################################
 
 module "assets_bucket" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-s3.git?ref=v1.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-s3.git?ref=v1.0.1"
 
   bucket_name = "${var.project_name}-${var.environment}-assets"
 
@@ -109,7 +109,7 @@ module "route53" {
 ########################################################################################
 
 module "acm" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-acm.git?ref=v1.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-acm.git?ref=v1.0.1"
 
   project_name = var.project_name
   environment  = var.environment
@@ -206,10 +206,11 @@ module "private_alb_sg_egress_rule" {
 }
 
 module "private_alb" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-load-balancer.git?ref=v1.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-load-balancer.git?ref=v1.1.0"
 
   project_name = "${var.project_name}-${local.private_alb_name}"
   environment  = var.environment
+  name         = local.private_load_balancer_name
   internal     = true
 
   subnet_ids            = var.private_subnet_ids
@@ -267,11 +268,12 @@ module "internal_alb_sg_egress_rule" {
 }
 
 module "internal_alb" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-load-balancer.git?ref=v1.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-load-balancer.git?ref=v1.1.0"
   count  = var.internal_tier_enabled ? 1 : 0
 
   project_name = "${var.project_name}-${local.internal_alb_name}"
   environment  = var.environment
+  name         = local.internal_load_balancer_name
   internal     = true
 
   subnet_ids            = var.internal_subnet_ids

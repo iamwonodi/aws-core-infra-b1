@@ -272,7 +272,7 @@ module "database_profile" {
 }
 
 module "database_host" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-compute-storage.git?ref=v1.1.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-compute-storage.git?ref=v1.2.0"
 
   project_name = var.project_name
   environment  = var.environment
@@ -281,7 +281,10 @@ module "database_host" {
   subnet_id         = var.isolated_subnet_ids[0]
   security_group_id = var.isolated_security_group_id
 
+  # The golden AMI is built in the same apply, so its ID is unknown at plan
+  # time: no Ubuntu lookup, decided outright.
   ami_id                = var.ami_id
+  ami_lookup_enabled    = false
   instance_type         = var.db_instance_type
   instance_profile_name = module.database_profile.instance_profile_name
   root_volume_size      = var.db_root_volume_size

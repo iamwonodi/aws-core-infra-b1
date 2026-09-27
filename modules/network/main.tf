@@ -293,7 +293,7 @@ module "endpoint_ingress_rule" {
 }
 
 module "isolated_vpc_endpoints" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-vpc-endpoints.git?ref=v1.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-vpc-endpoints.git?ref=v1.0.1"
 
   project_name = var.project_name
   environment  = var.environment
@@ -304,7 +304,7 @@ module "isolated_vpc_endpoints" {
 
   deploy_interface_endpoints_across_azs = false
 
-  gateway_route_table_ids = module.route_tables.isolated_route_table_id
+  gateway_route_table_ids = [module.route_tables.isolated_route_table_id]
 
   interface_security_group_ids = [
     module.vpc_endpoint_sg.security_group_id
