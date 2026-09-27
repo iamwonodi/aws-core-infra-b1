@@ -34,6 +34,9 @@ on:
       - "modules/edge/variables.tf"
       - "modules/edge/locals.tf"
       - "modules/edge/tests/**"
+      - "modules/network/nacl-security/variables.tf"
+      - "modules/network/nacl-security/locals.tf"
+      - "modules/network/nacl-security/tests/**"
       - ".github/workflows/terraform-module-tests.yml"
   push:
     branches:
@@ -54,6 +57,9 @@ on:
       - "modules/edge/variables.tf"
       - "modules/edge/locals.tf"
       - "modules/edge/tests/**"
+      - "modules/network/nacl-security/variables.tf"
+      - "modules/network/nacl-security/locals.tf"
+      - "modules/network/nacl-security/tests/**"
       - ".github/workflows/terraform-module-tests.yml"
 
 permissions:
@@ -133,3 +139,6 @@ jobs:
 
       - name: edge load balancer names
         run: bash modules/edge/tests/run.sh
+
+      - name: network ACL rules
+        run: bash modules/network/nacl-security/tests/run.sh
