@@ -44,7 +44,7 @@ module "nat_gateway" {
 # While it is recovered or replaced, private and internal hosts have no
 # outbound internet access; the isolated tier never had any.
 module "nat_instance" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-nat-instance.git?ref=v1.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-nat-instance.git?ref=v1.0.1"
   count  = var.nat_type == "instance" ? 1 : 0
 
   project_name = var.project_name
@@ -124,7 +124,7 @@ module "nacl_security" {
 ################################################################################
 
 module "public_sg" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-security-group.git?ref=v1.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-security-group.git?ref=v2.0.0"
 
   project_name = var.project_name
   environment  = var.environment
@@ -134,7 +134,7 @@ module "public_sg" {
 }
 
 module "private_sg" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-security-group.git?ref=v1.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-security-group.git?ref=v2.0.0"
 
   project_name = var.project_name
   environment  = var.environment
@@ -144,7 +144,7 @@ module "private_sg" {
 }
 
 module "internal_sg" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-security-group.git?ref=v1.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-security-group.git?ref=v2.0.0"
 
   project_name = var.project_name
   environment  = var.environment
@@ -158,7 +158,7 @@ module "internal_sg" {
 # groups it has no inbound rules: it is what the databases and the VPC endpoints
 # admit, so a tools host can reach them without wearing a customer tier's group.
 module "tools_sg" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-security-group.git?ref=v1.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-security-group.git?ref=v2.0.0"
 
   project_name = var.project_name
   environment  = var.environment
@@ -168,7 +168,7 @@ module "tools_sg" {
 }
 
 module "isolated_sg" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-security-group.git?ref=v1.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-security-group.git?ref=v2.0.0"
 
   project_name = var.project_name
   environment  = var.environment
@@ -178,7 +178,7 @@ module "isolated_sg" {
 }
 
 module "vpc_endpoint_sg" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-security-group.git?ref=v1.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-security-group.git?ref=v2.0.0"
 
   project_name = var.project_name
   environment  = var.environment
@@ -199,16 +199,16 @@ module "vpc_endpoint_sg" {
 ################################################################################
 
 module "global_outbound_routing" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v2.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v2.0.1"
 
   # Keyed by a fixed name, not by the group's ID: the IDs exist only after apply,
   # and for_each must know its keys when the plan is made.
   for_each = {
-    public       = module.public_sg.security_group_id
-    private      = module.private_sg.security_group_id
-    internal     = module.internal_sg.security_group_id
-    tools        = module.tools_sg.security_group_id
-    vpc-endpoint = module.vpc_endpoint_sg.security_group_id
+    public       = module.public_sg.id
+    private      = module.private_sg.id
+    internal     = module.internal_sg.id
+    tools        = module.tools_sg.id
+    vpc-endpoint = module.vpc_endpoint_sg.id
   }
 
   security_group_id = each.value
@@ -226,10 +226,10 @@ module "global_outbound_routing" {
 # functions could not read a secret. Nothing here reaches the internet: the
 # isolated route table has no internet or NAT route.
 module "isolated_outbound_within_vpc" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v2.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v2.0.1"
 
-  security_group_id = module.isolated_sg.security_group_id
-  description       = "Allow the isolated tier to reach the VPC endpoints and the VPC's own hosts"
+  security_group_id = module.isolated_sg.id
+  description       = "Allow the isolated tier to reach the VPC endpoints and the hosts in the VPC"
 
   ip_protocol = "-1"
   cidr_ipv4   = var.vpc_cidr
@@ -238,9 +238,9 @@ module "isolated_outbound_within_vpc" {
 # S3 through the gateway endpoint: its prefix list is S3's address ranges in
 # this Region.
 module "isolated_to_s3" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v2.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v2.0.1"
 
-  security_group_id = module.isolated_sg.security_group_id
+  security_group_id = module.isolated_sg.id
   description       = "Allow the isolated tier to reach S3 through the gateway endpoint"
 
   ip_protocol    = "tcp"
@@ -273,7 +273,7 @@ moved {
 ################################################################################
 
 module "endpoint_ingress_rule" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-sg-ingress-rule.git?ref=v1.2.1"
+  source = "git::https://github.com/iamwonodi/terraform-aws-sg-ingress-rule.git?ref=v1.2.2"
 
   # for_each requires a set of strings, not numbers -- endpoint_ingress_ports
   # is a list of numbers (locals.tf), so each value is converted to a string
@@ -284,7 +284,7 @@ module "endpoint_ingress_rule" {
     "${pair[0]}-${pair[1]}" => { tier = pair[0], port = pair[1] }
   }
 
-  security_group_id            = module.vpc_endpoint_sg.security_group_id
+  security_group_id            = module.vpc_endpoint_sg.id
   description                  = "Allow ${each.value.tier} workloads to access VPC endpoints on port: ${each.value.port}"
   ip_protocol                  = "tcp"
   from_port                    = each.value.port
@@ -307,7 +307,7 @@ module "isolated_vpc_endpoints" {
   gateway_route_table_ids = [module.route_tables.isolated_route_table_id]
 
   interface_security_group_ids = [
-    module.vpc_endpoint_sg.security_group_id
+    module.vpc_endpoint_sg.id
   ]
 
   # S3 is reached via a gateway endpoint (no ENI, no hourly cost) since

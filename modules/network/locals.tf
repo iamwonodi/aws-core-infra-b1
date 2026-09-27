@@ -11,7 +11,7 @@ locals {
   internal_sg_description = "Security group for backend application services and internal workloads in internal subnets."
 
   tools_sg_name        = "team-tools"
-  tools_sg_description = "Worn by the team's own tools (database GUIs and the like), which run in private subnets on their own hosts."
+  tools_sg_description = "Worn by the team tools (database GUIs and the like), which run in private subnets on their own hosts."
 
   isolated_sg_name        = "isolated-tier"
   isolated_sg_description = "Security group for isolated database workloads with no default internet access."
@@ -25,9 +25,9 @@ locals {
   # Every tier whose hosts call AWS services, and the team's tools, which run on
   # hosts of their own. The public tier runs none.
   endpoint_client_security_groups = {
-    private  = module.private_sg.security_group_id
-    internal = module.internal_sg.security_group_id
-    isolated = module.isolated_sg.security_group_id
-    tools    = module.tools_sg.security_group_id
+    private  = module.private_sg.id
+    internal = module.internal_sg.id
+    isolated = module.isolated_sg.id
+    tools    = module.tools_sg.id
   }
 }

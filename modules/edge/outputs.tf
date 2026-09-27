@@ -37,10 +37,10 @@ output "internal_alb_https_listener_arn" {
 
 output "private_alb_security_group_id" {
   description = "Security group of the private-tier ALB. A service allows this group to reach its service port."
-  value       = module.private_alb_sg.security_group_id
+  value       = module.private_alb_sg.id
 }
 
 output "internal_alb_security_group_id" {
   description = "Security group of the internal-tier ALB. A service allows this group to reach its service port. Null while internal_tier_enabled is off."
-  value       = try(module.internal_alb_sg[0].security_group_id, null)
+  value       = try(module.internal_alb_sg[0].id, null)
 }

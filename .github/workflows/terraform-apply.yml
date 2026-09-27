@@ -270,6 +270,16 @@ jobs:
       - name: Place Plan File
         run: cp /tmp/plan-bundle/tfplan infrastructure/${{ matrix.environment }}/tfplan
 
+      # The Lambda packages the plan was made with (see terraform-plan.yml's
+      # "Stage Plan Artifact"), back at their repository paths. An artifact
+      # from before they were carried has no build/ folder.
+      - name: Place Built Packages
+        run: |
+          if [[ -d /tmp/plan-bundle/build ]]; then
+            cp -R /tmp/plan-bundle/build/. .
+            find /tmp/plan-bundle/build -type f -printf '%P\n'
+          fi
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:

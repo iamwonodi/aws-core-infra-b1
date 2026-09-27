@@ -25,25 +25,25 @@ output "isolated_subnet_ids" {
 
 output "public_security_group_id" {
   description = "Security group ID for the public tier."
-  value       = module.public_sg.security_group_id
+  value       = module.public_sg.id
 }
 
 output "private_security_group_id" {
   description = "Security group ID for the private tier."
-  value       = module.private_sg.security_group_id
+  value       = module.private_sg.id
 }
 
 output "internal_security_group_id" {
   description = "Security group ID for the internal tier."
-  value       = module.internal_sg.security_group_id
+  value       = module.internal_sg.id
 }
 
 output "isolated_security_group_id" {
   description = "Security group ID for the isolated tier."
-  value       = module.isolated_sg.security_group_id
+  value       = module.isolated_sg.id
 }
 
 output "tools_security_group_id" {
   description = "Security group worn by the team's own tools. The databases and the VPC endpoints admit it."
-  value       = module.tools_sg.security_group_id
+  value       = module.tools_sg.id
 }

@@ -167,7 +167,7 @@ module "acm" {
 ########################################################################################
 
 module "private_alb_sg" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-security-group.git?ref=v1.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-security-group.git?ref=v2.0.0"
 
   project_name = var.project_name
   environment  = var.environment
@@ -180,9 +180,9 @@ module "private_alb_sg" {
 # prefix-list restriction remains correct for a VPC origin, not just a
 # custom origin -- see data.tf.
 module "private_alb_sg_ingress_rule" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-sg-ingress-rule.git?ref=v1.2.1"
+  source = "git::https://github.com/iamwonodi/terraform-aws-sg-ingress-rule.git?ref=v1.2.2"
 
-  security_group_id = module.private_alb_sg.security_group_id
+  security_group_id = module.private_alb_sg.id
   description       = "Allow HTTPS from CloudFront origin-facing servers"
   ip_protocol       = "tcp"
   from_port         = 443
@@ -196,9 +196,9 @@ module "private_alb_sg_ingress_rule" {
 # AWS's default allow-all outbound rule when it creates a security group, so
 # without this rule the load balancer could reach nothing at all.
 module "private_alb_sg_egress_rule" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v2.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v2.0.1"
 
-  security_group_id = module.private_alb_sg.security_group_id
+  security_group_id = module.private_alb_sg.id
   description       = "Allow the load balancer to reach its targets and identity provider"
 
   ip_protocol = "-1"
@@ -214,8 +214,8 @@ module "private_alb" {
   internal     = true
 
   subnet_ids            = var.private_subnet_ids
-  alb_security_group_id = module.private_alb_sg.security_group_id
-  acm_certificate_arn   = module.acm.certificate_arns["default"]
+  alb_security_group_id = module.private_alb_sg.id
+  acm_certificate_arn   = module.acm.validated_certificate_arns["default"]
 
   default_target_group_arn = null
 }
@@ -231,7 +231,7 @@ module "private_alb" {
 ########################################################################################
 
 module "internal_alb_sg" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-security-group.git?ref=v1.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-security-group.git?ref=v2.0.0"
   count  = var.internal_tier_enabled ? 1 : 0
 
   project_name = var.project_name
@@ -243,10 +243,10 @@ module "internal_alb_sg" {
 
 # PRIVATE -> INTERNAL ALB firewall configuration.
 module "internal_alb_sg_ingress_rule" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-sg-ingress-rule.git?ref=v1.2.1"
+  source = "git::https://github.com/iamwonodi/terraform-aws-sg-ingress-rule.git?ref=v1.2.2"
   count  = var.internal_tier_enabled ? 1 : 0
 
-  security_group_id            = module.internal_alb_sg[0].security_group_id
+  security_group_id            = module.internal_alb_sg[0].id
   description                  = "Allow HTTPS from private application workloads"
   ip_protocol                  = "tcp"
   from_port                    = 443
@@ -257,10 +257,10 @@ module "internal_alb_sg_ingress_rule" {
 # As for the private load balancer: without an outbound rule it could reach
 # none of its targets.
 module "internal_alb_sg_egress_rule" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v2.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-sg-egress-rule.git?ref=v2.0.1"
   count  = var.internal_tier_enabled ? 1 : 0
 
-  security_group_id = module.internal_alb_sg[0].security_group_id
+  security_group_id = module.internal_alb_sg[0].id
   description       = "Allow the load balancer to reach its targets"
 
   ip_protocol = "-1"
@@ -277,8 +277,8 @@ module "internal_alb" {
   internal     = true
 
   subnet_ids            = var.internal_subnet_ids
-  alb_security_group_id = module.internal_alb_sg[0].security_group_id
-  acm_certificate_arn   = module.acm.certificate_arns["default"]
+  alb_security_group_id = module.internal_alb_sg[0].id
+  acm_certificate_arn   = module.acm.validated_certificate_arns["default"]
 
   default_target_group_arn = null
 }
@@ -329,7 +329,7 @@ module "cloudfront" {
 
   aliases = local.cloudfront_aliases
 
-  acm_certificate_arn = module.acm.certificate_arns["cloudfront"]
+  acm_certificate_arn = module.acm.validated_certificate_arns["cloudfront"]
 }
 
 # -----------------------------------------------------------------------------

@@ -3,7 +3,7 @@ locals {
   private_alb_sg_description = "Security group for the private-tier ALB, which CloudFront routes application traffic to as a VPC origin."
 
   internal_alb_name           = "internal-alb"
-  internal_alb_sg_description = "Security group for the internal-tier ALB, reached only from the private tier's backend API."
+  internal_alb_sg_description = "Security group for the internal-tier ALB, reached only from the backend API in the private tier."
 
   # Load balancer names. AWS caps them at 32 characters, so they use a short
   # form of the environment: with the longest project name init-project allows

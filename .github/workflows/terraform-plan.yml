@@ -333,14 +333,28 @@ jobs:
             "${ASSETS_REPOSITORY}" \
             "${ASSETS_REF}"
 
+      # The saved plan refers to the Lambda packages Terraform built while
+      # planning (archive_file writes them under modules/**/.terraform-build/),
+      # and the apply job starts from a fresh checkout without them. They travel
+      # in the artifact's build/ folder, at their repository paths.
+      - name: Stage Plan Artifact
+        if: steps.plan.outputs.exitcode == '2'
+        run: |
+          mkdir -p /tmp/plan-artifact/build
+          cp "infrastructure/${{ matrix.environment }}/tfplan" \
+             "infrastructure/${{ matrix.environment }}/deployment-metadata.json" \
+             /tmp/plan-artifact/
+          find modules -type f -path '*/.terraform-build/*' -print \
+            -exec cp --parents {} /tmp/plan-artifact/build/ \;
+
       - name: Upload Plan Artifact
         if: steps.plan.outputs.exitcode == '2'
         uses: actions/upload-artifact@v7
         with:
           name: tfplan-${{ matrix.environment }}-${{ github.run_id }}
-          path: |
-            infrastructure/${{ matrix.environment }}/tfplan
-            infrastructure/${{ matrix.environment }}/deployment-metadata.json
+          path: /tmp/plan-artifact
+          # The packages sit under .terraform-build/, which is skipped otherwise.
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
 
