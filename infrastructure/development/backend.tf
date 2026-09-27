@@ -1,9 +1,15 @@
 terraform {
   backend "s3" {
-    bucket       = "core-development-tfstate" # <project>-development-tfstate: scripts/init-project.sh sets it
-    key          = "core/terraform.tfstate"   # Folder path inside your bucket
-    region       = "af-south-1"               # backend blocks cannot use variables: scripts/init-project.sh sets it with aws_region
-    encrypt      = true                       # Forces encryption on upload
-    use_lockfile = true                       # Native S3 locking, no DynamoDB
+    # <project>-development-tfstate: scripts/init-project.sh sets it.
+    bucket = "core-development-tfstate"
+    # Folder path inside the bucket.
+    key = "core/terraform.tfstate"
+    # Backend blocks cannot use variables: scripts/init-project.sh sets this
+    # from aws_region.
+    region = "af-south-1"
+    # Forces encryption on upload.
+    encrypt = true
+    # Native S3 locking, no DynamoDB.
+    use_lockfile = true
   }
 }

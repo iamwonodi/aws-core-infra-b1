@@ -26,13 +26,25 @@ check "production serves the base domain"              test "$(val production do
 check "private domain follows the domain by default"   test "$(val production private_domain terraform.tfvars)" = example.org
 check "state bucket named per environment"             test "$(val staging bucket backend.tf)" = acme-staging-tfstate
 check "backend region updated"                         test "$(val production region backend.tf)" = eu-west-1
-check "trailing comments in backend.tf survive"        grep -q 'Native S3 locking' "${WORK}/repo/infrastructure/development/backend.tf"
+check "comments in backend.tf survive"                 grep -q 'Native S3 locking' "${WORK}/repo/infrastructure/development/backend.tf"
+# terraform fmt aligns trailing comments by the value's length, so a longer
+# project name or region would unalign them and fail CI's "fmt -check". The
+# lines this script sets therefore carry no trailing comment.
+set_lines="$(grep -hE '^[[:space:]]*(project_name|aws_region|domain_name|private_domain|database_engines|bucket|region)[[:space:]]*=' "${SOURCE_ROOT}"/infrastructure/*/terraform.tfvars "${SOURCE_ROOT}"/infrastructure/*/backend.tf)"
+check "no line the script sets has a trailing comment" bash -c "[ -n \"\$1\" ] && ! grep -q '#' <<< \"\$1\"" _ "${set_lines}"
 check "no placeholder remains"                         bash "${WORK}/repo/scripts/ci/check-placeholders.sh" "${WORK}/repo/infrastructure/development" "${WORK}/repo/infrastructure/staging" "${WORK}/repo/infrastructure/production"
 snapshot="$(cat "${WORK}/repo"/infrastructure/*/terraform.tfvars "${WORK}/repo"/infrastructure/*/backend.tf | sha256sum)"
 run >/dev/null 2>&1
 check "re-running changes nothing (idempotent)"        test "$(cat "${WORK}/repo"/infrastructure/*/terraform.tfvars "${WORK}/repo"/infrastructure/*/backend.tf | sha256sum)" = "$snapshot"
 fresh; run --private-domain internal.example.org >/dev/null 2>&1
 check "--private-domain is honoured"                   test "$(val staging private_domain terraform.tfvars)" = staging.internal.example.org
+# Only where Terraform (or OpenTofu) is installed; the check above runs everywhere.
+TF_FMT="$(command -v terraform || command -v tofu || true)"
+if [[ -n "${TF_FMT}" ]]; then
+  fresh; bash "${INIT}" --project modart-platform --region ap-southeast-1 --domain example.org >/dev/null 2>&1
+  check "  (a longer project name and region were written)" grep -q modart-platform-development-tfstate "${WORK}/repo/infrastructure/development/backend.tf"
+  check "rewritten files pass fmt -check ($(basename "${TF_FMT}"))" "${TF_FMT}" fmt -check -recursive "${WORK}/repo/infrastructure"
+fi
 
 echo "== GitHub environments"
 fresh; run >/dev/null 2>&1
