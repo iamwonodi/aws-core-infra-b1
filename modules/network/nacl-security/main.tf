@@ -133,14 +133,6 @@ module "nacl_security" {
   # ============================================================================
 
   private_ingress_rules = {
-    ephemeral_from_public = {
-      rule_number = 100
-      protocol    = "tcp"
-      rule_action = "allow"
-      cidr_block  = var.public_cidr_block
-      from_port   = 1024
-      to_port     = 65535
-    }
 
     tcp_from_internal = {
       rule_number = 110
@@ -167,6 +159,15 @@ module "nacl_security" {
       cidr_block  = var.private_cidr_block
       from_port   = 0
       to_port     = 65535
+      # Replies from the internet, through the NAT. A reply keeps the internet host's address; the NAT only relays it, so the source is not the public subnets.
+      ephemeral_from_internet = {
+        rule_number = 140
+        protocol    = "tcp"
+        rule_action = "allow"
+        cidr_block  = "0.0.0.0/0"
+        from_port   = 1024
+        to_port     = 65535
+      }
     }
   }
 
@@ -244,14 +245,6 @@ module "nacl_security" {
   # ============================================================================
 
   internal_ingress_rules = {
-    ephemeral_from_public = {
-      rule_number = 100
-      protocol    = "tcp"
-      rule_action = "allow"
-      cidr_block  = var.public_cidr_block
-      from_port   = 1024
-      to_port     = 65535
-    }
 
     tcp_from_private = {
       rule_number = 110
@@ -278,27 +271,20 @@ module "nacl_security" {
       cidr_block  = var.isolated_cidr_block
       from_port   = 1024
       to_port     = 65535
+      # Replies from the internet, through the NAT. A reply keeps the internet host's address; the NAT only relays it, so the source is not the public subnets.
+      ephemeral_from_internet = {
+        rule_number = 140
+        protocol    = "tcp"
+        rule_action = "allow"
+        cidr_block  = "0.0.0.0/0"
+        from_port   = 1024
+        to_port     = 65535
+      }
     }
   }
 
   internal_egress_rules = {
-    http_to_public = {
-      rule_number = 100
-      protocol    = "tcp"
-      rule_action = "allow"
-      cidr_block  = var.public_cidr_block
-      from_port   = 80
-      to_port     = 80
-    }
 
-    https_to_public = {
-      rule_number = 110
-      protocol    = "tcp"
-      rule_action = "allow"
-      cidr_block  = var.public_cidr_block
-      from_port   = 443
-      to_port     = 443
-    }
 
     ephemeral_to_private = {
       rule_number = 120
@@ -325,6 +311,23 @@ module "nacl_security" {
       cidr_block  = var.isolated_cidr_block
       from_port   = 0
       to_port     = 65535
+      # Requests to the internet, through the NAT: the packet keeps the internet host's address, so the rule must name the internet, not the public subnets.
+      http_to_internet = {
+        rule_number = 150
+        protocol    = "tcp"
+        rule_action = "allow"
+        cidr_block  = "0.0.0.0/0"
+        from_port   = 80
+        to_port     = 80
+      }
+      https_to_internet = {
+        rule_number = 160
+        protocol    = "tcp"
+        rule_action = "allow"
+        cidr_block  = "0.0.0.0/0"
+        from_port   = 443
+        to_port     = 443
+      }
     }
   }
 
@@ -383,6 +386,15 @@ module "nacl_security" {
       cidr_block  = "0.0.0.0/0"
       from_port   = 1024
       to_port     = 65535
+      # The NAT instance reaching the VPC endpoints (Session Manager) in these subnets.
+      https_from_public = {
+        rule_number = 140
+        protocol    = "tcp"
+        rule_action = "allow"
+        cidr_block  = var.public_cidr_block
+        from_port   = 443
+        to_port     = 443
+      }
     }
   }
 
@@ -421,6 +433,15 @@ module "nacl_security" {
       cidr_block  = "0.0.0.0/0"
       from_port   = 443
       to_port     = 443
+      # Replies from the VPC endpoints to the NAT instance.
+      ephemeral_to_public = {
+        rule_number = 140
+        protocol    = "tcp"
+        rule_action = "allow"
+        cidr_block  = var.public_cidr_block
+        from_port   = 1024
+        to_port     = 65535
+      }
     }
   }
 }

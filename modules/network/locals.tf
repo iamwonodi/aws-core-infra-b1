@@ -24,10 +24,16 @@ locals {
 
   # Every tier whose hosts call AWS services, and the team's tools, which run on
   # hosts of their own. The public tier runs none.
-  endpoint_client_security_groups = {
-    private  = module.private_sg.id
-    internal = module.internal_sg.id
-    isolated = module.isolated_sg.id
-    tools    = module.tools_sg.id
-  }
+  # The VPC endpoints use private DNS, so every instance in the VPC reaches
+  # these services through them, the NAT instance included (Session Manager is
+  # its only way in). The NAT's key depends only on nat_type, known at plan time.
+  endpoint_client_security_groups = merge(
+    {
+      private  = module.private_sg.id
+      internal = module.internal_sg.id
+      isolated = module.isolated_sg.id
+      tools    = module.tools_sg.id
+    },
+    var.nat_type == "instance" ? { nat = module.nat_instance[0].security_group_id } : {}
+  )
 }
