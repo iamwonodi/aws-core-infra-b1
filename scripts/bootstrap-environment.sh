@@ -448,7 +448,9 @@ bootstrap_environment() {
     # -target is safe here only because module.github_oidc depends on nothing
     # but variables and the pure github_identity module;
     # scripts/ci/check-bootstrap-closure.py enforces that.
-    terraform apply -target=module.github_oidc
+    # Every root variable needs a value, even for a targeted apply. The OIDC
+    # module never reads the assets, so the repository's own folder does.
+    terraform apply -target=module.github_oidc -var="assets_path=../../assets"
 
     echo ""
     echo "Reading the core role ARN from the apply output."

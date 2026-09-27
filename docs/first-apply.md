@@ -71,6 +71,16 @@ Open a pull request. `terraform-plan.yml` plans each changed environment under i
 
 The first full apply creates the network, edge, fleets and database host. It fails fast, before touching AWS, if any `CHANGE_ME` remains.
 
+**DNS delegation, during the first full apply.** The apply creates a public Route 53 zone for the environment's domain (`dev.<base>` in development) and then waits for its certificates to be validated through public DNS. That only succeeds once the zone that serves the base domain delegates this name to the new zone. As soon as the new zone exists (the apply is waiting on `module.edge.module.acm`), read its name servers:
+
+```bash
+ZONE=$(aws route53 list-hosted-zones-by-name --dns-name dev.example.org \
+  --query 'HostedZones[?Name==`dev.example.org.` && Config.PrivateZone==`false`].Id' --output text)
+aws route53 get-hosted-zone --id "$ZONE" --query 'DelegationSet.NameServers' --output text
+```
+
+and add them wherever the base domain's DNS is managed, as four `NS` records for the host `dev` (for production, which serves the base domain itself, change the domain's name servers at the registrar instead). The private zone has the same name; its name servers are not the ones to use. Check with `nslookup -type=NS dev.example.org 8.8.8.8`; the certificates then validate within minutes and the apply continues. Delegation is done once per environment.
+
 ## 6. Onboard a service
 
 A service has **two repositories**: `infra` (its Terraform) and `app` (build and deploy).
