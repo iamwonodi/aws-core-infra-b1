@@ -25,6 +25,13 @@ module "ubuntu_ami_profile" {
   service_name = "ubuntu-ami"
 
   enable_ssm_access = true
+
+  # Image Builder's build instance fetches the recipe's components and reports
+  # back with this role: without the managed policy the build stops at
+  # "not authorized to perform: imagebuilder:GetComponent".
+  additional_policy_arns = [
+    "arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilder",
+  ]
 }
 
 module "ubuntu_ami" {
