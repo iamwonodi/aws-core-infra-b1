@@ -313,8 +313,13 @@ module "database_host" {
   # host, built from it. The data volume is separate and reattaches to it.
   user_data_replace_on_change = true
 
-  # The scripts and their manifest must exist before the host can boot.
-  depends_on = [aws_ssm_parameter.database_scripts_manifest]
+  # No depends_on here, on purpose. A module-level depends_on holds back every
+  # data source inside the module, including the subnet lookup that gives the
+  # data volume its zone: a pending change to the manifest, any script object
+  # or the deploy bucket then leaves the zone unknown at plan time, and the
+  # volume is replaced. The start-up script names the manifest through the
+  # resource instead (local.database_user_data), which makes the host alone
+  # wait for it. scripts/ci/check-host-dependencies.py keeps it that way.
 }
 
 # Read by the provisioning scripts on every run, so a changed limit needs no

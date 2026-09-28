@@ -26,6 +26,8 @@ A deleted secret can be restored for `db_secret_recovery_window_in_days` (defaul
 
 `database_profile` is the IAM role/instance profile the database host runs as -- separate from any fleet's own profile in the `compute` module. `database` (the `compute-storage` module) is the actual EC2 instance: placed in the first isolated subnet, running the same shared AMI the `compute` module built, with an optional secondary EBS volume for persistent storage.
 
+**The host's module takes no `depends_on`.** The data volume gets its availability zone from a subnet lookup inside `compute-storage`, and a module-level `depends_on` would hold that lookup back whenever the scripts, their manifest or the deploy bucket had a pending change: the zone would be unknown at plan time and the volume replaced. The host waits for its scripts instead through the manifest's name in its start-up script. `scripts/ci/check-host-dependencies.py` and `scripts/ci/check-data-volume-plan.sh` (which reads `tests/host.tftest.hcl`'s plan) keep it that way.
+
 ### SSM parameters
 
 `aws_ssm_parameter.database_connection_limits` holds `connection_limits` (core's `data/connection-limits.json`) under `/<project>/database/connection-limits`, which the provisioning scripts read on every run; see *Connection limits* below.
@@ -257,5 +259,7 @@ database/
 │   ├── update.sh        -- syncs the platforms team's registry and engines and runs them
 │   ├── provision.sh     -- creates a service's database and user inside an engine
 │   └── sync-admin-password.sh -- makes each engine's administrator password the secret's current one
+├── tests/
+│   └── host.tftest.hcl  -- a change to the deploy bucket must leave the data volume alone
 └── README.md
 ```

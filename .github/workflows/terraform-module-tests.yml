@@ -28,6 +28,8 @@ on:
       - "modules/platform/front-door/**"
       - "modules/platform/tools-role/**"
       - "modules/database/schedule/**"
+      - "modules/database/host/**"
+      - "scripts/ci/check-data-volume-plan.sh"
       - "modules/network/variables.tf"
       - "modules/network/validations.tf"
       - "modules/network/tests/**"
@@ -51,6 +53,8 @@ on:
       - "modules/platform/front-door/**"
       - "modules/platform/tools-role/**"
       - "modules/database/schedule/**"
+      - "modules/database/host/**"
+      - "scripts/ci/check-data-volume-plan.sh"
       - "modules/network/variables.tf"
       - "modules/network/validations.tf"
       - "modules/network/tests/**"
@@ -133,6 +137,14 @@ jobs:
         run: |
           terraform init -backend=false
           terraform test
+
+      # The data volume must not be replaced by a change around the host. The
+      # script runs the module's tests and reads the plan they print: see its
+      # header for why an assertion cannot see this.
+      - name: database-host data volume
+        run: |
+          terraform -chdir=modules/database/host init -backend=false
+          bash scripts/ci/check-data-volume-plan.sh
 
       - name: network invariants
         run: bash modules/network/tests/run.sh

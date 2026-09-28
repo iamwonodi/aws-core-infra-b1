@@ -144,9 +144,13 @@ locals {
       # the workspace", and the bootstrap refuses an empty mount path.
       data_volume_mount_path = local.data_volume_mount_path
 
-      deploy_bucket_name         = var.deploy_bucket_name
-      aws_region                 = local.aws_region
-      scripts_manifest_parameter = local.scripts_manifest_parameter
+      deploy_bucket_name = var.deploy_bucket_name
+      aws_region         = local.aws_region
+
+      # Through the resource, not the local: the host must not boot before the
+      # manifest (and the scripts it waits for) exist. The name is fixed, so the
+      # script's content does not change. See module.database_host.
+      scripts_manifest_parameter = aws_ssm_parameter.database_scripts_manifest.name
       database_env               = local.database_env
       fetch_scripts_function     = module.platform_scripts.fetch_scripts_function
     }

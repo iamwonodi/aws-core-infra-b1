@@ -18,6 +18,7 @@ on:
       - "modules/platform/front-door/lambda/**"
       - "scripts/**"
       - "infrastructure/**"
+      - "modules/database/host/*.tf"
       - ".github/workflows/script-tests.yml"
   push:
     branches:
@@ -29,6 +30,7 @@ on:
       - "modules/platform/front-door/lambda/**"
       - "scripts/**"
       - "infrastructure/**"
+      - "modules/database/host/*.tf"
       - ".github/workflows/script-tests.yml"
 
 permissions:
@@ -88,3 +90,9 @@ jobs:
           pip install --quiet python-hcl2
           python3 scripts/ci/check-bootstrap-closure.py \
             infrastructure/development infrastructure/staging infrastructure/production
+
+      # A depends_on on the module that owns the database's data volume defers
+      # its subnet lookup, and any pending change to the scripts or the deploy
+      # bucket then replaces the volume.
+      - name: Data Volume Is Not Held Back
+        run: python3 scripts/ci/check-host-dependencies.py modules infrastructure

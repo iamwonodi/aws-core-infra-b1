@@ -43,6 +43,8 @@ bash modules/network/tests/run.sh
 (cd modules/database/schedule && terraform init -backend=false && terraform test)
 bash modules/database/provisioning/lambda/tests/run.sh
 python3 scripts/ci/check-bootstrap-closure.py infrastructure/*
+python3 scripts/ci/check-host-dependencies.py modules infrastructure
+terraform -chdir=modules/database/host init -backend=false && bash scripts/ci/check-data-volume-plan.sh
 ```
 
 ## Open items

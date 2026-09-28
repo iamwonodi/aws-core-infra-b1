@@ -41,6 +41,7 @@ The decisions that shape this blueprint, each with the reason, so a future reade
 
 | Decision | Why |
 | --- | --- |
+| The database host's module never takes `depends_on`; the host waits for its scripts through the manifest's name in its start-up script | A module-level `depends_on` held back the subnet lookup that gives the data volume its zone, so a change to the deploy bucket or any script left the zone unknown and replaced the volume (seen in development's plan). Two checks guard it: `check-host-dependencies.py` and `check-data-volume-plan.sh` |
 | The infra role writes `/<project>/services/<service>/config` and the app role reads it | The only handoff between a service's two repositories; neither needs the other's permissions |
 | Services read one SSM parameter, not core's Terraform state | State contains every generated secret; a service role that could read it could read them all |
 | No CloudFront secret header | The ALBs are internal, reachable only through the CloudFront VPC origin |
