@@ -92,8 +92,32 @@ run_document() {
   fi
 }
 
+# A database host the apply has just created needs a minute or so before its
+# SSM agent registers; until then SSM refuses commands to it ("InvalidInstanceId:
+# Instances not in a valid state"). Wait for it to report Online.
+wait_for_ssm() {
+  local instance="$1" ping start elapsed
+  [[ "${instance}" =~ ^i-[0-9a-f]{8,17}$ ]] || { echo "ERROR: '${instance}' is not an instance ID." >&2; return 1; }
+  start="${SECONDS}"
+  while true; do
+    ping="$(aws ssm describe-instance-information \
+      --filters "Key=InstanceIds,Values=${instance}" \
+      --query "InstanceInformationList[0].PingStatus" --output text \
+      --region "${REGION}" 2>/dev/null || echo None)"
+    [[ "${ping}" == "Online" ]] && return 0
+    elapsed=$(( SECONDS - start ))
+    if [[ ${elapsed} -ge ${TIMEOUT} ]]; then
+      echo "ERROR: ${instance} had not registered with SSM after ${TIMEOUT}s (last status: ${ping})." >&2
+      return 1
+    fi
+    echo "  waiting for ${instance} to register with SSM (${elapsed}s)."
+    sleep "${INTERVAL}"
+  done
+}
+
 if [[ "$(jq -r '.kind' "${SPEC_FILE}")" == "host" ]]; then
   INSTANCE="$(jq -r '.instance_id // empty' "${SPEC_FILE}")"
+  wait_for_ssm "${INSTANCE}"
   run_document "$(jq -r '.refresh_document' "${SPEC_FILE}")" "${INSTANCE}" "Refreshing the database host's platform scripts"
   run_document "$(jq -r '.people_document' "${SPEC_FILE}")" "${INSTANCE}" "Provisioning people on the database host"
   echo "People are provisioned on the database host."

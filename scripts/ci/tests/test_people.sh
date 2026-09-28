@@ -5,7 +5,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 export FAKE_AWS="${WORK}/aws" PROVISION_INTERVAL=0 PROVISION_TIMEOUT=5
 SCRIPT="${SCRIPTS}/ci/provision-people.sh"
 
-reset(){ rm -rf "${FAKE_AWS}"; mkdir -p "${FAKE_AWS}"/{ssm-status,db-status,lambda}; : > "${FAKE_AWS}/calls.log"; }
+reset(){ rm -rf "${FAKE_AWS}"; mkdir -p "${FAKE_AWS}"/{ssm-status,ssm-unregistered,db-status,lambda}; : > "${FAKE_AWS}/calls.log"; }
 spec(){ printf '%s' "$1" > "${WORK}/spec.json"; }
 run(){ bash "${SCRIPT}" "${WORK}/spec.json" af-south-1 > "${WORK}/out.txt" 2>&1; }
 called(){ grep -qF -- "$1" "${FAKE_AWS}/calls.log"; }
@@ -29,6 +29,16 @@ check "  showing why"                                    said "it broke"
 reset; spec "${HOST}"; echo Failed > "${FAKE_AWS}/ssm-status/core-database-refresh-scripts"
 run; rc=$?
 check "a failed refresh stops before people"             bash -c "[[ ${rc} -ne 0 ]] && ! grep -q provision-people '${FAKE_AWS}/calls.log'"
+# A host the apply has just created is not registered with SSM for a minute
+# or so, and SSM refuses commands to it until then.
+reset; spec "${HOST}"; echo 3 > "${FAKE_AWS}/ssm-unregistered/i-0123456789abcdef0"
+run; rc=$?
+check "a host not yet registered with SSM is waited for" test ${rc} -eq 0
+check "  saying so"                                       said "waiting for i-0123456789abcdef0 to register with SSM"
+check "  sending nothing until it is Online"              bash -c "[[ \$(grep -n 'describe-instance-information\|send-command' '${FAKE_AWS}/calls.log' | head -4 | grep -c describe-instance-information) -eq 4 ]]"
+reset; spec "${HOST}"; echo 1000 > "${FAKE_AWS}/ssm-unregistered/i-0123456789abcdef0"
+PROVISION_TIMEOUT=0 run; rc=$?
+check "a host that never registers times out"            bash -c "[[ ${rc} -ne 0 ]] && grep -q 'had not registered with SSM' '${WORK}/out.txt' && ! grep -q send-command '${FAKE_AWS}/calls.log'"
 reset; spec "${HOST}"; echo InProgress > "${FAKE_AWS}/ssm-status/core-database-provision-people"
 PROVISION_TIMEOUT=0 run; rc=$?
 check "a run that never finishes times out"              bash -c "[[ ${rc} -ne 0 ]] && grep -q 'giving up' '${WORK}/out.txt'"

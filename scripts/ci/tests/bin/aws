@@ -2,6 +2,8 @@
 """Fake aws for provision-people.sh. State lives under $FAKE_AWS:
   calls.log                    every call
   ssm-status/<document>        the status that document's run ends in (default Success)
+  ssm-unregistered/<instance>  how many more checks report the instance as not yet
+                               registered with SSM (default 0: registered, Online)
   db-status/<id>               a database's state (default available)
   lambda/<function>.json       what the function returns ({"FunctionError": ...} to fail)"""
 import json, os, sys
@@ -18,6 +20,16 @@ def read(path, default):
     p = os.path.join(root, path)
     return open(p).read().strip() if os.path.exists(p) else default
 
+if args[:2] == ["ssm", "describe-instance-information"]:
+    instance = opt("--filters").split("Values=")[1]
+    p = os.path.join(root, "ssm-unregistered", instance)
+    remaining = int(read("ssm-unregistered/" + instance, "0"))
+    if remaining > 0:
+        open(p, "w").write(str(remaining - 1))
+        print("None")
+    else:
+        print("Online")
+    sys.exit(0)
 if args[:2] == ["ssm", "send-command"]:
     document = opt("--document-name")
     open(os.path.join(root, "last-document"), "w").write(document)
