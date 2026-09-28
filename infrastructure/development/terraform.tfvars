@@ -76,7 +76,7 @@ db_enable_route53_write_access     = true
 db_enable_ecr_read_access          = true
 db_enable_private_dns_registration = true
 db_enable_data_volume_mount        = true
-db_data_volume_device              = "/dev/sdb"
+db_data_volume_device              = "/dev/sdf"
 db_data_volume_size                = 50
 db_data_volume_mount_path          = ""
 

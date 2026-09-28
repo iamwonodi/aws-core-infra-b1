@@ -272,7 +272,7 @@ module "database_profile" {
 }
 
 module "database_host" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-compute-storage.git?ref=v1.2.1"
+  source = "git::https://github.com/iamwonodi/terraform-aws-compute-storage.git?ref=v1.3.0"
 
   project_name = var.project_name
   environment  = var.environment
@@ -296,6 +296,10 @@ module "database_host" {
   data_volume_size         = var.db_data_volume_size
 
   user_data = local.database_user_data
+
+  # The start-up script runs only at first boot: a changed script means a new
+  # host, built from it. The data volume is separate and reattaches to it.
+  user_data_replace_on_change = true
 
   # The scripts and their manifest must exist before the host can boot.
   depends_on = [aws_ssm_parameter.database_scripts_manifest]

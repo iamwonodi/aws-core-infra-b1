@@ -154,11 +154,16 @@ variable "db_enable_data_volume_mount" {
 variable "db_data_volume_device" {
   type        = string
   description = "Linux device name of the secondary EBS volume attached to the database host."
-  default     = "/dev/sdb"
+  default     = "/dev/sdf"
 
+  # EC2 reserves /dev/sdb-/dev/sde for instance-store volumes, and Canonical's
+  # Ubuntu images (so the golden image) map /dev/sdb and /dev/sdc: attaching
+  # there fails with "Attachment point /dev/sdb is already in use". AWS
+  # recommends /dev/sdf-/dev/sdp for EBS volumes. bootstrap.sh finds the
+  # volume whatever it is called (on Nitro it appears as /dev/nvme1n1).
   validation {
-    condition     = trimspace(var.db_data_volume_device) != ""
-    error_message = "db_data_volume_device must not be empty."
+    condition     = can(regex("^/dev/(sd|xvd)[f-p]$", var.db_data_volume_device))
+    error_message = "db_data_volume_device must be /dev/sdf to /dev/sdp (or /dev/xvdf to /dev/xvdp), the range AWS recommends for EBS volumes."
   }
 }
 
