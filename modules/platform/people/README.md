@@ -19,6 +19,7 @@ The list's emails (`emails` output) are declared to the front door (`modules/pla
 | `project_name`, `environment` | Naming |
 | `people` | `{ name = { email, access } }`: name 2-20 lowercase letters and digits starting with a letter; email unique; access `read` or `write` |
 | `read_only` | Refuse `write` for everyone on this list |
+| `recovery_window_in_days` | Days a deleted secret can be restored (default 7). Its name is fixed, so a rebuild within the window fails: 0 deletes it at once, for an environment that is destroyed and rebuilt |
 | `tags` | Tags for the secret |
 
 ## Outputs

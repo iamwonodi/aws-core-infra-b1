@@ -99,4 +99,4 @@ The script tests run against stubbed `aws`, `docker` and `gh`. They prove the sc
 
 ## Destroying an environment
 
-`terraform-destroy.yml` is manual, requires typing the environment name (or `DESTROY-ALL-ENVIRONMENTS`), and destroys everything in that environment's state, **including its OIDC role**. The state bucket is created outside Terraform and is never touched by it; only `scripts/destroy-terraform-backend.sh` can remove it, by hand, and it refuses while the state still tracks resources.
+`terraform-destroy.yml` is manual, requires typing the environment name (or `DESTROY-ALL-ENVIRONMENTS`), and destroys everything in that environment's state **except the OIDC provider and the core role** CI signs in with, so the next apply needs no bootstrap ([runbook: Destroying an environment](docs/runbook.md#destroying-an-environment)). The state bucket is created outside Terraform and is never touched by it; only `scripts/destroy-terraform-backend.sh` can remove it, by hand, and it refuses while the state still tracks resources.

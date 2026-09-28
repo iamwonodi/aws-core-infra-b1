@@ -278,6 +278,11 @@ module "compute" {
   pipeline_schedule          = var.pipeline_schedule
   enable_image_tests         = var.enable_image_tests
   image_test_timeout_minutes = var.image_test_timeout_minutes
+
+  # Development is destroyed and rebuilt; the bucket is versioned, so without
+  # this its old versions would stop the destroy. Staging and production keep
+  # the default (false).
+  deploy_bucket_force_destroy = true
 }
 
 ################################################################################
@@ -350,6 +355,9 @@ module "database" {
 
   # Connections each login may hold open at once (data/README.md).
   connection_limits = jsondecode(file("${path.module}/data/connection-limits.json"))
+
+  # Deleted at once, so a rebuild can create it again under the same name.
+  db_secret_recovery_window_in_days = 0
 }
 
 ################################################################################
@@ -374,6 +382,9 @@ module "people" {
 
   read_only = false
 
+  # Deleted at once, so a rebuild can create it again under the same name.
+  recovery_window_in_days = 0
+
   tags = local.common_tags
 }
 
@@ -394,6 +405,9 @@ module "front_door" {
   deploy_bucket_name = module.compute.deploy_bucket_name
 
   platform_emails = module.people.emails
+
+  # Development is destroyed and rebuilt; a protected pool would stop the destroy.
+  deletion_protection = false
 
   tags = local.common_tags
 }

@@ -34,6 +34,7 @@ The decisions that shape this blueprint, each with the reason, so a future reade
 | The names `database`, `database-hub`, `fleet`, `internal`, `platform`, `private` and `services` are reserved | A name-pattern permission on `<project>-<service>-*` would otherwise reach core's own secret and SSM documents |
 | Services redeploy with a custom SSM document, never `AWS-RunShellScript` | Permission to send `AWS-RunShellScript` is root on every host |
 | Service roles are a separate instance of the OIDC module | The first apply targets only the core role; anything it depends on is built too, and the service roles depend on the whole environment. A test enforces this |
+| The destroy workflow keeps the OIDC provider and the core role; development turns off the protections that would stop a destroy | The workflow runs as that role, and nothing else depends on its policy attachment, so a full destroy could remove it first and be refused everything after, the state write included. Kept, a rebuild needs no bootstrap; retiring an environment removes them from a laptop. Development is rebuilt, so its deploy bucket, sign-in pool and secrets must not refuse deletion; staging and production keep refusing |
 | Role ARNs are published to a `platform-outputs` branch, not `main` | `main` stays pull-request-only, with no bypass rule and no bot commits |
 
 ## Platform

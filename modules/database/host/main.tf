@@ -26,6 +26,8 @@ module "secrets_vault" {
     username      = local.db_username
     root_password = random_password.db_password.result
   }
+
+  recovery_window_in_days = var.db_secret_recovery_window_in_days
 }
 
 ########################################################################################

@@ -29,6 +29,12 @@ variable "platform_emails" {
   }
 }
 
+variable "deletion_protection" {
+  type        = bool
+  default     = true
+  description = "Refuse to delete the user pool. Leave on wherever the sign-ins matter; turn off only in an environment that is destroyed and rebuilt (development), or its destroy stops at the pool."
+}
+
 variable "tags" {
   type        = map(string)
   default     = {}

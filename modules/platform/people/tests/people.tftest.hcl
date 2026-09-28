@@ -134,3 +134,35 @@ run "an_invalid_email_is_refused" {
 
   expect_failures = [var.people]
 }
+
+run "a_deleted_secret_can_be_restored_for_a_week_by_default" {
+  command = plan
+
+  assert {
+    condition     = aws_secretsmanager_secret.this.recovery_window_in_days == 7
+    error_message = "the default keeps a deleted secret restorable for 7 days"
+  }
+}
+
+run "a_rebuilt_environment_deletes_it_at_once" {
+  command = plan
+
+  variables {
+    recovery_window_in_days = 0
+  }
+
+  assert {
+    condition     = aws_secretsmanager_secret.this.recovery_window_in_days == 0
+    error_message = "0 deletes the secret at once, so a rebuild can reuse its name"
+  }
+}
+
+run "a_window_secrets_manager_refuses_is_refused" {
+  command = plan
+
+  variables {
+    recovery_window_in_days = 3
+  }
+
+  expect_failures = [var.recovery_window_in_days]
+}

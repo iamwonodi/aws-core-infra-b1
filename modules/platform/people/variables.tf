@@ -43,6 +43,17 @@ variable "read_only" {
   description = "Refuse \"write\" for everyone on this list."
 }
 
+variable "recovery_window_in_days" {
+  type        = number
+  default     = 7
+  description = "Days a deleted people secret can still be restored. Its name is fixed, so until the window ends a new one cannot be created under it: 0 deletes it at once, for an environment that is destroyed and rebuilt (development)."
+
+  validation {
+    condition     = var.recovery_window_in_days == 0 || (var.recovery_window_in_days >= 7 && var.recovery_window_in_days <= 30)
+    error_message = "recovery_window_in_days must be 0 (delete at once) or 7 to 30, the range Secrets Manager accepts."
+  }
+}
+
 variable "tags" {
   type        = map(string)
   default     = {}

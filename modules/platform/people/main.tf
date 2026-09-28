@@ -66,7 +66,7 @@ resource "random_password" "person" {
 resource "aws_secretsmanager_secret" "this" {
   name                    = "${var.project_name}-database-people-${var.environment}-secret-vault"
   description             = "Every team member's database login password and access level, keyed by database user. Administrators hand each person their own."
-  recovery_window_in_days = 7
+  recovery_window_in_days = var.recovery_window_in_days
 
   tags = var.tags
 }

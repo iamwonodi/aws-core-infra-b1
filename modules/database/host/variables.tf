@@ -205,6 +205,17 @@ variable "db_backup_retention_days" {
   }
 }
 
+variable "db_secret_recovery_window_in_days" {
+  type        = number
+  description = "Days the administrator secret can still be restored after it is deleted. Its name is fixed, so until the window ends a rebuilt environment cannot create it again: 0 deletes it at once, for an environment that is destroyed and rebuilt."
+  default     = 7
+
+  validation {
+    condition     = var.db_secret_recovery_window_in_days == 0 || (var.db_secret_recovery_window_in_days >= 7 && var.db_secret_recovery_window_in_days <= 30)
+    error_message = "db_secret_recovery_window_in_days must be 0 (delete at once) or 7 to 30, the range Secrets Manager accepts."
+  }
+}
+
 # -----------------------------------------------------------------------------
 # Deploy bucket (owned by the compute module)
 # -----------------------------------------------------------------------------

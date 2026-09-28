@@ -38,6 +38,7 @@ The tools repository creates the app client (with the tools' web addresses as ca
 | `project_name`, `environment`, `account_id` | Naming, and the account whose bucket may invoke the function |
 | `deploy_bucket_name` | Holds the declarations. **This module owns the bucket's S3 event notifications**: S3 allows one configuration per bucket, so anything else needing events from it must be added here |
 | `platform_emails` | The platform list's emails |
+| `deletion_protection` | Refuse to delete the user pool (default `true`). Off only where the environment is destroyed and rebuilt, or the destroy stops at the pool |
 | `tags` | Tags for the pool, the function, its role and logs |
 
 ## Outputs

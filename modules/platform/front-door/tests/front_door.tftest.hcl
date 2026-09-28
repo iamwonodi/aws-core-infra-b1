@@ -122,3 +122,25 @@ run "an_invalid_platform_email_is_refused" {
 
   expect_failures = [var.platform_emails]
 }
+
+run "the_pool_is_protected_by_default" {
+  command = plan
+
+  assert {
+    condition     = aws_cognito_user_pool.this.deletion_protection == "ACTIVE"
+    error_message = "the pool refuses to be deleted unless the environment turns that off"
+  }
+}
+
+run "an_environment_that_is_rebuilt_can_delete_it" {
+  command = plan
+
+  variables {
+    deletion_protection = false
+  }
+
+  assert {
+    condition     = aws_cognito_user_pool.this.deletion_protection == "INACTIVE"
+    error_message = "off, so a destroy can delete the pool"
+  }
+}

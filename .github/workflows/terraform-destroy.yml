@@ -1,8 +1,9 @@
 name: Terraform Destroy
 
 # ==============================================================================
-# Manually destroys ALL resources in a single environment's Terraform state,
-# or all three environments in sequence. This is the only destructive
+# Manually destroys an environment's infrastructure, or every environment this
+# project runs, in sequence. CI's own way in (the OIDC provider and the core
+# role) is kept: see SCOPE. This is the only destructive
 # workflow in this repository — everything here is designed around making
 # it hard to trigger by accident and easy to review before anything is
 # actually destroyed.
@@ -37,10 +38,21 @@ name: Terraform Destroy
 #      scripts/destroy-terraform-backend.sh can remove it, by hand, and only
 #      once the state is empty.
 #
-# SCOPE: destroys every resource in an environment's Terraform state. The
-# assets bucket goes with it; its contents are reproducible from the assets
+# SCOPE: destroys everything in an environment's Terraform state except
+# module.github_oidc (the OIDC provider and the core role this workflow runs
+# as) and module.github_identity, the one module it reads. Destroying the role
+# it signs in with would cut the run off part-way: nothing else depends on the
+# role's AdministratorAccess attachment, so Terraform may delete it first, and
+# every later call (the rest of the destroy, writing the state, releasing its
+# lock) would be refused. Kept, the next apply needs no bootstrap. To remove
+# them too, when retiring an environment, see docs/runbook.md ("Destroying an
+# environment"). scripts/ci/resolve-destroy-targets.sh builds the list.
+#
+# The assets bucket goes with it; its contents are reproducible from the assets
 # source, and assets_force_destroy already makes staging and production refuse
-# to delete a bucket that still holds objects.
+# to delete a bucket that still holds objects. Staging and production also keep
+# their protections (the deploy bucket, the sign-in pool, the secrets' recovery
+# window): a destroy there stops at them, on purpose. Development sets them off.
 # ==============================================================================
 
 on:
@@ -161,33 +173,47 @@ jobs:
         run: terraform -chdir=infrastructure/${{ matrix.environment }} init -input=false -lockfile=readonly
 
       # ========================================================================
-      # CHECK WHETHER THERE IS ANYTHING TO DESTROY
+      # WHAT TO DESTROY
       #
-      # An empty state means nothing to plan. Planning a destroy against it
-      # would succeed with "no changes" and produce a pointless artifact.
+      # Everything in the state but CI's own sign-in (see SCOPE). Nothing left
+      # means nothing to plan: a destroy plan would succeed with "no changes"
+      # and produce a pointless artifact.
       # ========================================================================
 
-      - name: Check State For Resources
+      - name: Resolve Destroy Targets
         id: targets
         run: |
-          COUNT="$(terraform -chdir=infrastructure/${{ matrix.environment }} state list | wc -l)"
+          set -o pipefail
+          terraform -chdir=infrastructure/${{ matrix.environment }} state list \
+            | scripts/ci/resolve-destroy-targets.sh > "${RUNNER_TEMP}/destroy-targets.txt"
+          COUNT="$(grep -c . "${RUNNER_TEMP}/destroy-targets.txt" || true)"
 
           if [[ "${COUNT}" -eq 0 ]]; then
-            echo "No resources in ${{ matrix.environment }}'s state -- nothing to destroy."
+            echo "Nothing to destroy in ${{ matrix.environment }}: its state holds only CI's own sign-in, or nothing."
             echo "has_changes=false" >> "${GITHUB_OUTPUT}"
           else
-            echo "${COUNT} resource(s) in state will be planned for destruction."
+            echo "Will plan the destruction of:"
+            cat "${RUNNER_TEMP}/destroy-targets.txt"
             echo "has_changes=true" >> "${GITHUB_OUTPUT}"
           fi
 
       # The destroy plan does not read any asset files, but the configuration
       # still requires assets_path to be set. A path that does not exist makes
       # fileset() return an empty set.
+      #
+      # -target is how CI's sign-in is left out; Terraform warns that the plan
+      # is partial, which here is the point.
       - name: Terraform Destroy Plan
         if: steps.targets.outputs.has_changes == 'true'
         run: |
+          TARGETS=()
+          while IFS= read -r target; do
+            TARGETS+=("-target=${target}")
+          done < "${RUNNER_TEMP}/destroy-targets.txt"
+
           terraform -chdir=infrastructure/${{ matrix.environment }} plan -input=false -destroy -out=tfplan-destroy \
-            -var="assets_path=../../assets-unused"
+            -var="assets_path=../../assets-unused" \
+            "${TARGETS[@]}"
 
       - name: Render Destroy Plan As Text
         if: steps.targets.outputs.has_changes == 'true'
@@ -303,7 +329,7 @@ jobs:
       - name: Summary
         run: |
           if [[ "${{ steps.check.outputs.present }}" == "true" ]]; then
-            echo "Destroyed all resources in **${{ matrix.environment }}**. The state bucket is managed outside Terraform and was not touched." >> "${GITHUB_STEP_SUMMARY}"
+            echo "Destroyed **${{ matrix.environment }}**, except the OIDC provider and the core role CI signs in with. The state bucket is managed outside Terraform and was not touched." >> "${GITHUB_STEP_SUMMARY}"
           else
-            echo "Nothing to destroy in **${{ matrix.environment }}** -- its state holds no resources." >> "${GITHUB_STEP_SUMMARY}"
+            echo "Nothing to destroy in **${{ matrix.environment }}**: its state holds only CI's own sign-in, or nothing." >> "${GITHUB_STEP_SUMMARY}"
           fi

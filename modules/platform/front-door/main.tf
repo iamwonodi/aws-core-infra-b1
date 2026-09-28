@@ -79,7 +79,9 @@ resource "aws_cognito_user_pool" "this" {
     email_sending_account = "COGNITO_DEFAULT"
   }
 
-  deletion_protection = "ACTIVE"
+  # Cognito refuses to delete a protected pool, so a destroy stops here unless
+  # the environment turns it off.
+  deletion_protection = var.deletion_protection ? "ACTIVE" : "INACTIVE"
 
   tags = var.tags
 }

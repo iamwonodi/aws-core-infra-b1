@@ -182,6 +182,27 @@ What then reaches the engine:
 
 **Replace one password per apply, and let that apply finish.** In development the sync needs the engine's password to be the secret's current or previous version: replaced twice before the sync ran, it is neither, and provisioning stops with *matches neither the secret's current nor its previous version*. To recover then, on the host (Session Manager): PostgreSQL needs nothing (the sync signs in over the container's socket); for MySQL or MongoDB, find the password the engine still has in the secret's older versions (`aws secretsmanager list-secret-version-ids`, then `get-secret-value --version-id`), and set it as the engine's with `ALTER USER CURRENT_USER() IDENTIFIED BY '<current>'` (MySQL) or `db.changeUserPassword('admin', '<current>')` (MongoDB), signed in with the old one.
 
+## Destroying an environment
+
+Run **Terraform Destroy** for the environment. It destroys everything in the environment's state **except the OIDC provider and the core role** CI signs in with (`module.github_oidc`, and `module.github_identity`, which it reads): destroying the role it runs as would cut the run off part-way, with the state unwritten and its lock left behind. Kept, a rebuild is an ordinary plan and apply: no bootstrap, no new `TF_AWS_ROLE_ARN`.
+
+Before it:
+
+1. **Apply once first** if this blueprint version is new to the environment. Development turns off the protections that would stop a destroy (the deploy bucket's `force_destroy`, the sign-in pool's deletion protection, and the two secrets' recovery window, set to 0 so a rebuild can reuse their names), and a destroy uses the settings already applied, not the ones in the code. Staging and production keep them on: a destroy there stops at them, on purpose.
+2. **Put a reviewer on the environment** if it has none (development has none by default), so the destroy waits for you after its plan. Read the plan in the *Destroy Plan* job's summary before approving *Destroy Apply*.
+
+Left behind, outside Terraform's state, and billed until removed: the golden AMI and its snapshot (Image Builder does not deregister it), and the database host's backup snapshots. The data volume itself is destroyed.
+
+**To retire an environment for good**, after the workflow, remove what it kept, from your machine with the account's administrator credentials:
+
+```bash
+eval "$(scripts/github-identity.sh)"
+terraform -chdir=infrastructure/<environment> init
+terraform -chdir=infrastructure/<environment> destroy -var="assets_path=../../assets-unused"
+```
+
+then remove it from `environments.json` and delete its state bucket (`scripts/destroy-terraform-backend.sh <environment>`, which refuses while the state still tracks anything).
+
 ## If it stops
 
 | Symptom | Usually |
@@ -196,6 +217,8 @@ What then reaches the engine:
 | *matches neither the secret's current nor its previous version* | development: an administrator password was replaced twice before the host saw it (*Changing an administrator password*) |
 | `no host answered` on deploy | the hosts have not finished booting, or are not tagged `Project`/`Service` as expected |
 | a tag was pushed and nothing built | `RELEASE_TOKEN` is missing |
+| destroy: `BucketNotEmpty`, or *deletion protection is activated* on the user pool | the environment has not applied since its protections were turned off (*Destroying an environment*, step 1) |
+| destroy: the VPC *has dependencies and cannot be deleted* | a group CloudFront created for the VPC origin (`CloudFront-VPCOrigins-Service-SG`) may outlive it: delete that group by hand, then run the destroy again |
 
 ---
 
