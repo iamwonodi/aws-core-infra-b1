@@ -233,9 +233,19 @@ resource "aws_ssm_document" "database_refresh_scripts" {
         action = "aws:runShellScript"
         name   = "refreshScripts"
         inputs = {
-          timeoutSeconds = "300"
+          # Up to a new host's whole start-up (see below), as long as a deploy.
+          timeoutSeconds = "1800"
           runCommand = concat(
-            ["#!/usr/bin/env bash", "set -euo pipefail"],
+            [
+              "#!/usr/bin/env bash",
+              "set -euo pipefail",
+              # A host that has just started fetches these scripts and runs its
+              # first deploy from its start-up script. Wait for that to finish,
+              # so what follows (provisioning people, say) meets a ready host;
+              # an established host returns at once. Stop if start-up failed.
+              "startup=0; cloud-init status --wait >/dev/null || startup=$?",
+              "if [[ $startup -eq 1 ]]; then echo 'ERROR: the database host start-up script failed; see /var/log/cloud-init-output.log on the host.' >&2; exit 1; fi",
+            ],
             split("\n", module.platform_scripts.fetch_scripts_function),
             ["fetch_platform_scripts \"${local.scripts_manifest_parameter}\" \"${var.deploy_bucket_name}\" \"${local.aws_region}\" \"${local.database_workspace}\""]
           )

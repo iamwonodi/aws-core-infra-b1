@@ -52,32 +52,51 @@ fetch_platform_scripts() {
 
   mkdir -p "${destination}"
 
+  # One fetch at a time per destination, each in a staging directory of its
+  # own. A host's first boot and a refresh-scripts run can fetch into the same
+  # directory at the same moment; with shared "<name>.new" files one run's
+  # rename or clean-up took the other's download ("mv: cannot stat ...new").
+  local lock_fd staging
+  exec {lock_fd}>"${destination}/.fetch-scripts.lock"
+  if ! flock -w 600 "${lock_fd}"; then
+    echo "ERROR: another script fetch held ${destination}/.fetch-scripts.lock for 10 minutes." >&2
+    exec {lock_fd}>&-
+    return 1
+  fi
+  staging="$(mktemp -d "${destination}/.fetch.XXXXXX")"
+
   for key in "${keys[@]}"; do
-    file="${destination}/$(basename "${key}")"
+    file="${staging}/$(basename "${key}")"
     expected="$(printf '%s' "${manifest}" | jq -r --arg k "${key}" '.[$k]')"
 
     for attempt in 1 2 3 4 5; do
-      if aws s3 cp "s3://${bucket}/${key}" "${file}.new" --region "${region}" --only-show-errors; then
+      if aws s3 cp "s3://${bucket}/${key}" "${file}" --region "${region}" --only-show-errors; then
         break
       fi
       if [[ "${attempt}" -eq 5 ]]; then
         echo "ERROR: could not download s3://${bucket}/${key}." >&2
-        rm -f "${destination}"/*.new
+        rm -rf "${staging}"
+        exec {lock_fd}>&-
         return 1
       fi
       sleep "${pause}"
     done
 
-    if ! printf '%s  %s\n' "${expected}" "${file}.new" | sha256sum --check --status; then
+    if ! printf '%s  %s\n' "${expected}" "${file}" | sha256sum --check --status; then
       echo "ERROR: ${key} does not match the checksum in ${manifest_parameter}; nothing was installed." >&2
-      rm -f "${destination}"/*.new
+      rm -rf "${staging}"
+      exec {lock_fd}>&-
       return 1
     fi
   done
 
+  # Every file downloaded and verified: install them together.
   for key in "${keys[@]}"; do
     file="${destination}/$(basename "${key}")"
-    mv "${file}.new" "${file}"
+    mv "${staging}/$(basename "${key}")" "${file}"
     chmod 0755 "${file}"
   done
+
+  rm -rf "${staging}"
+  exec {lock_fd}>&-
 }

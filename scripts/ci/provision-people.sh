@@ -20,14 +20,16 @@
 # Usage: provision-people.sh <people_provisioning.json> <aws-region>
 #   terraform -chdir=infrastructure/<env> output -json people_provisioning > p.json
 #
-# Tunable for tests: PROVISION_INTERVAL (5s), PROVISION_TIMEOUT (600s).
+# Tunable for tests: PROVISION_INTERVAL (5s), PROVISION_TIMEOUT (1800s). The
+# timeout covers a database host that has just started: its refresh document
+# waits for the host's start-up, first deploy included, before anything else.
 # ==============================================================================
 set -euo pipefail
 
 SPEC_FILE="${1:?Usage: provision-people.sh <people_provisioning.json> <aws-region>}"
 REGION="${2:?aws-region is required}"
 INTERVAL="${PROVISION_INTERVAL:-5}"
-TIMEOUT="${PROVISION_TIMEOUT:-600}"
+TIMEOUT="${PROVISION_TIMEOUT:-1800}"
 
 if ! jq -e 'type == "object" and (.kind == "host" or .kind == "managed")' "${SPEC_FILE}" >/dev/null 2>&1; then
   echo "ERROR: ${SPEC_FILE} is not a people_provisioning output (kind host or managed)." >&2

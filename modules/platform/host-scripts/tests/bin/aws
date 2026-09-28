@@ -28,6 +28,9 @@ if args[:2]==['s3','sync']:
 if args[:2]==['s3','cp']:
     src,dst=args[2],args[3]
     if os.environ.get('FAKE_S3_FAIL'): sys.exit(1)
+    # A slow download, so tests can make concurrent fetches overlap.
+    if os.environ.get('FAKE_S3_DELAY'):
+        import time; time.sleep(float(os.environ['FAKE_S3_DELAY']))
     if src.startswith('s3://'):
         p=s3path(src)
         if not os.path.exists(p): sys.stderr.write('404\n'); sys.exit(1)

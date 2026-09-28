@@ -31,4 +31,17 @@ setup; rm $FAKE_ROOT/s3/b/_platform/lib/deploy-lib.sh
 check "missing object fails, nothing installed"   bash -c "! run 2>/dev/null && [ ! -e $WORK/dest/update.sh ]"
 setup; echo '{}' > $FAKE_ROOT/ssm/core__platform__scripts-manifest
 check "empty manifest fails"                      bash -c "! run 2>/dev/null"
+# A host's first boot and a refresh-scripts run can fetch into the same
+# directory at the same moment. Each must still install every script: in the
+# first development apply one run's rename consumed the other's download.
+setup; : > $WORK/concurrent.log
+for i in 1 2 3 4; do
+  ( FAKE_S3_DELAY=0.3 bash -c "set -euo pipefail; source $F; fetch_platform_scripts /core/platform/scripts-manifest b af-south-1 $WORK/dest" 2>>$WORK/concurrent.log; echo "rc=$?" >> $WORK/concurrent.rc ) &
+done
+wait
+check "concurrent fetches all succeed"            bash -c "[ \$(grep -c '^rc=0$' $WORK/concurrent.rc) -eq 4 ]"
+check "concurrent fetches install every script"   bash -c "grep -q LIB $WORK/dest/deploy-lib.sh && grep -q UPDATE $WORK/dest/update.sh"
+check "concurrent fetches leave nothing behind"   bash -c "[ -z \"\$(find $WORK/dest -mindepth 1 -name '*.new' -o -mindepth 1 -name '.fetch.*')\" ]"
+rm -f $WORK/concurrent.rc
+
 echo; echo "passed=$pass failed=$fail"; [ $fail -eq 0 ]
