@@ -272,7 +272,7 @@ module "database_profile" {
 }
 
 module "database_host" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-compute-storage.git?ref=v1.3.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-compute-storage.git?ref=v1.3.1"
 
   project_name = var.project_name
   environment  = var.environment
