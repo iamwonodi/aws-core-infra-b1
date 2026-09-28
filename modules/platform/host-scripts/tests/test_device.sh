@@ -12,12 +12,14 @@ a=s.index('resolve_data_device() {'); b=s.index('if [[ "$${ENABLE_DATA_VOLUME_MO
 open(os.environ['WORK']+'/devfn.sh','w').write(s[a:b].replace('$${','${').replace('$$','$'))
 PY
 pass=0; fail=0
-t(){ local name="$1" scen="$2" expect="$3" out rc; out=$(FAKE_LSBLK_SCENARIO=$scen bash -c "source $WORK/devfn.sh; resolve_data_device /dev/sdb-nonexistent"); rc=$?
+t(){ local name="$1" scen="$2" expect="$3" out rc; out=$(FAKE_LSBLK_SCENARIO=$scen bash -c "source $WORK/devfn.sh; resolve_data_device /dev/sdf-nonexistent 50"); rc=$?
      if [[ "$expect" == FAIL ]]; then [[ $rc -ne 0 ]] && { pass=$((pass+1)); echo "  ok   $name"; } || { fail=$((fail+1)); echo "  FAIL $name (got '$out')"; }
      else [[ "$out" == "$expect" && $rc -eq 0 ]] && { pass=$((pass+1)); echo "  ok   $name"; } || { fail=$((fail+1)); echo "  FAIL $name (got '$out' rc=$rc)"; }; fi; }
 echo "== resolve_data_device"
 t "single unmounted EBS disk is chosen, root skipped" one_extra /dev/nvme1n1
 t "ambiguous (two extra disks) refuses to guess"      two_extra FAIL
+t "a disk of another size is not the data volume"     stray_disk /dev/nvme2n1
+t "no disk of the configured size fails"              wrong_size FAIL
 t "no extra disk fails"                               none FAIL
 t "instance-store disks are not EBS"                  instance_store FAIL
 echo "passed=$pass failed=$fail"; [ $fail -eq 0 ]

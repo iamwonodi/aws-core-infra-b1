@@ -35,7 +35,7 @@ module "ubuntu_ami_profile" {
 }
 
 module "ubuntu_ami" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-ubuntu-ami.git?ref=v2.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-ubuntu-ami.git?ref=v2.0.1"
 
   project_name = var.project_name
   environment  = var.environment

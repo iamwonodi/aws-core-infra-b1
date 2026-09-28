@@ -7,6 +7,20 @@ case "$*" in
       two_extra) printf '/dev/nvme0n1 Amazon Elastic Block Store\n/dev/nvme1n1 Amazon Elastic Block Store\n/dev/nvme2n1 Amazon Elastic Block Store\n' ;;
       none)      printf '/dev/nvme0n1 Amazon Elastic Block Store\n' ;;
       instance_store) printf '/dev/nvme0n1 Amazon Elastic Block Store\n/dev/nvme1n1 Amazon EC2 NVMe Instance Storage\n' ;;
+      stray_disk|wrong_size) printf '/dev/nvme0n1 Amazon Elastic Block Store\n/dev/nvme1n1 Amazon Elastic Block Store\n/dev/nvme2n1 Amazon Elastic Block Store\n' ;;
+    esac ;;
+  # Sizes in bytes. one_extra/two_extra: every extra disk is 50 GiB. stray_disk:
+  # nvme1n1 is a 24 GiB disk an image brought along, nvme2n1 the 50 GiB volume.
+  # wrong_size: two extra disks, neither 50 GiB.
+  "-dbno SIZE /dev/nvme1n1")
+    case "$FAKE_LSBLK_SCENARIO" in
+      stray_disk|wrong_size) echo 25769803776 ;;
+      *) echo 53687091200 ;;
+    esac ;;
+  "-dbno SIZE /dev/nvme2n1")
+    case "$FAKE_LSBLK_SCENARIO" in
+      wrong_size) echo 32212254720 ;;
+      *) echo 53687091200 ;;
     esac ;;
   "-no MOUNTPOINT /dev/nvme0n1") printf '/boot/efi\n/\n' ;;
   "-no MOUNTPOINT /dev/nvme1n1"|"-no MOUNTPOINT /dev/nvme2n1") printf '\n' ;;

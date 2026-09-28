@@ -138,6 +138,7 @@ locals {
 
       enable_data_volume_mount = var.db_enable_data_volume_mount
       data_volume_device       = var.db_data_volume_device
+      data_volume_size_gib     = var.db_data_volume_size
 
       # The resolved path, not the raw variable: an empty variable means "use
       # the workspace", and the bootstrap refuses an empty mount path.

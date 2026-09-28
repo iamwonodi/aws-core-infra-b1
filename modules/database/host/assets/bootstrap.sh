@@ -31,6 +31,7 @@ DATA_ROOT="${data_root}"
 
 ENABLE_DATA_VOLUME_MOUNT="${enable_data_volume_mount}"
 DATA_VOLUME_DEVICE="${data_volume_device}"
+DATA_VOLUME_SIZE_GIB="${data_volume_size_gib}"
 DATA_VOLUME_MOUNT_PATH="${data_volume_mount_path}"
 
 DEPLOY_BUCKET_NAME="${deploy_bucket_name}"
@@ -62,12 +63,15 @@ done
 # replacement instance keeps its data.
 # ==============================================================================
 
-# On current instance types an EBS volume attached as /dev/sdb appears as an
+# On current instance types an EBS volume attached as /dev/sdf appears as an
 # NVMe device (/dev/nvme1n1), and the requested name may not exist. This prints
-# the configured device when it exists; otherwise the single unmounted EBS disk.
+# the configured device when it exists; otherwise the single unmounted EBS disk
+# of exactly the configured size. The size rules out any other extra disk (an
+# image that brought one along was once formatted and mounted in its place).
 resolve_data_device() {
-  local configured="$1" candidate
+  local configured="$1" size_gib="$2" candidate
   local -a candidates=()
+  local expected_bytes=$(( size_gib * 1024 * 1024 * 1024 ))
 
   if [[ -b "$${configured}" ]]; then
     echo "$${configured}"
@@ -78,6 +82,9 @@ resolve_data_device() {
     [[ -z "$${candidate}" ]] && continue
     # Skip any disk with a mounted partition -- that is the root volume.
     if lsblk -no MOUNTPOINT "$${candidate}" 2>/dev/null | grep -q .; then
+      continue
+    fi
+    if [[ "$(lsblk -dbno SIZE "$${candidate}" 2>/dev/null)" != "$${expected_bytes}" ]]; then
       continue
     fi
     candidates+=("$${candidate}")
@@ -111,7 +118,7 @@ if [[ "$${ENABLE_DATA_VOLUME_MOUNT}" == "true" ]]; then
     DEVICE=""
 
     for _ in $(seq 1 30); do
-      if DEVICE="$(resolve_data_device "$${DATA_VOLUME_DEVICE}")"; then
+      if DEVICE="$(resolve_data_device "$${DATA_VOLUME_DEVICE}" "$${DATA_VOLUME_SIZE_GIB}")"; then
         break
       fi
       DEVICE=""
@@ -119,7 +126,7 @@ if [[ "$${ENABLE_DATA_VOLUME_MOUNT}" == "true" ]]; then
     done
 
     if [[ -z "$${DEVICE}" ]]; then
-      echo "ERROR: the data volume did not become available (configured device $${DATA_VOLUME_DEVICE})."
+      echo "ERROR: the data volume did not become available (configured device $${DATA_VOLUME_DEVICE}, $${DATA_VOLUME_SIZE_GIB} GiB)."
       exit 1
     fi
 

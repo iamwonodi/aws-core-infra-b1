@@ -127,7 +127,7 @@ The scripts live in the deploy bucket under `_platform/` and are verified agains
 
 ### Data volume
 
-Bootstrap formats the persistent volume only when it carries no filesystem, mounts it by UUID with `nofail`, and finds the device even when it appears as an NVMe disk (`/dev/nvme1n1`) rather than the configured `/dev/sdf`. If more than one unmounted EBS disk exists it refuses to guess.
+Bootstrap formats the persistent volume only when it carries no filesystem, mounts it by UUID with `nofail`, and finds the device even when it appears as an NVMe disk (`/dev/nvme1n1`) rather than the configured `/dev/sdf`: the unmounted EBS disk of exactly `db_data_volume_size`. If there is no such disk, or more than one, it refuses to guess.
 
 ---
 

@@ -51,8 +51,10 @@ custom_validate_commands = [
 ] # Additional validation commands supplied by the caller.
 
 
-component_version          = "1.0.0"
-recipe_version             = "1.0.0"
+# Image Builder components and recipes cannot be changed in place: bump both
+# whenever the image's contents change (1.0.1: Docker installed, root on /dev/sda1).
+component_version          = "1.0.1"
+recipe_version             = "1.0.1"
 root_volume_size           = 24
 root_volume_type           = "gp3"
 instance_types             = ["t3.medium"]
