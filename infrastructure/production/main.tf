@@ -625,3 +625,31 @@ resource "aws_ssm_parameter" "platform_config" {
   type        = "String"
   value       = module.platform_contract.config_json
 }
+
+# ------------------------------------------------------------------------------
+# MONTHLY COST BUDGET
+#
+# One per environment, since each is its own AWS account. The limit is
+# monthly_budget_usd (terraform.tfvars; scripts/init-project.sh
+# --monthly-budget sets it). The alerts go to budget_alert_emails, from the
+# environment's BUDGET_ALERT_EMAILS secret: addresses stay out of this
+# repository and out of plan output. Without any, no budget is created.
+# ------------------------------------------------------------------------------
+
+locals {
+  budget_alert_emails = [
+    for address in split(",", var.budget_alert_emails) : trimspace(address)
+    if trimspace(address) != ""
+  ]
+}
+
+module "monthly_budget" {
+  source = "git::https://github.com/iamwonodi/terraform-aws-budget.git?ref=v1.0.0"
+  # Whether there are addresses decides whether the budget exists; the
+  # addresses themselves stay sensitive.
+  count = nonsensitive(length(local.budget_alert_emails) > 0) ? 1 : 0
+
+  name         = "${var.project_name}-${local.environment}-monthly"
+  limit_amount = var.monthly_budget_usd
+  alert_emails = local.budget_alert_emails
+}

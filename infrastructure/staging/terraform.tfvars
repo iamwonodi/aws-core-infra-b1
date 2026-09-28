@@ -55,3 +55,7 @@ internal_tier_enabled = false
 # Gateway) or "instance" (a small NAT instance, far cheaper, but outbound traffic
 # stops for the minutes it is recovered or replaced).
 nat_type = "instance"
+
+# Monthly cost budget for this account, in US dollars. Alerts go to the
+# BUDGET_ALERT_EMAILS secret's addresses (local-config/staging.secrets.env).
+monthly_budget_usd = 100

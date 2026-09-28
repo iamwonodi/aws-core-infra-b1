@@ -271,3 +271,25 @@ variable "team_tools_repository_id" {
   type        = string
   default     = null
 }
+
+variable "monthly_budget_usd" {
+  description = "Monthly cost budget for this environment's AWS account, in US dollars. Alerts go out at 80% and 100% of actual spend and when the month's forecast passes 100%. Set with scripts/init-project.sh --monthly-budget."
+  type        = number
+
+  validation {
+    condition     = var.monthly_budget_usd > 0
+    error_message = "monthly_budget_usd must be more than 0."
+  }
+}
+
+variable "budget_alert_emails" {
+  description = "Comma-separated addresses for this environment's budget alerts (at most 10). Supplied by CI from the BUDGET_ALERT_EMAILS environment secret, never committed. Empty: no budget."
+  type        = string
+  default     = ""
+  sensitive   = true
+
+  validation {
+    condition     = length([for a in split(",", var.budget_alert_emails) : a if trimspace(a) != ""]) <= 10
+    error_message = "budget_alert_emails may list at most 10 addresses."
+  }
+}

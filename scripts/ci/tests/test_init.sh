@@ -30,7 +30,7 @@ check "comments in backend.tf survive"                 grep -q 'Native S3 lockin
 # terraform fmt aligns trailing comments by the value's length, so a longer
 # project name or region would unalign them and fail CI's "fmt -check". The
 # lines this script sets therefore carry no trailing comment.
-set_lines="$(grep -hE '^[[:space:]]*(project_name|aws_region|domain_name|private_domain|database_engines|bucket|region)[[:space:]]*=' "${SOURCE_ROOT}"/infrastructure/*/terraform.tfvars "${SOURCE_ROOT}"/infrastructure/*/backend.tf)"
+set_lines="$(grep -hE '^[[:space:]]*(project_name|aws_region|domain_name|private_domain|database_engines|monthly_budget_usd|bucket|region)[[:space:]]*=' "${SOURCE_ROOT}"/infrastructure/*/terraform.tfvars "${SOURCE_ROOT}"/infrastructure/*/backend.tf)"
 check "no line the script sets has a trailing comment" bash -c "[ -n \"\$1\" ] && ! grep -q '#' <<< \"\$1\"" _ "${set_lines}"
 check "no placeholder remains"                         bash "${WORK}/repo/scripts/ci/check-placeholders.sh" "${WORK}/repo/infrastructure/development" "${WORK}/repo/infrastructure/staging" "${WORK}/repo/infrastructure/production"
 snapshot="$(cat "${WORK}/repo"/infrastructure/*/terraform.tfvars "${WORK}/repo"/infrastructure/*/backend.tf | sha256sum)"
@@ -122,4 +122,25 @@ check "omitted, the current list is kept"              bash -c "[ $rc -eq 0 ] &&
 fresh
 check "an unknown environment is refused"              bash -c "! bash '${INIT}' ${ARGS[*]} --environments prod >/dev/null 2>&1"
 check "engines for an environment not run are refused" bash -c "! bash '${INIT}' ${ARGS[*]} --environments development,production --staging-engines postgres >/dev/null 2>&1"
+echo "== monthly budget"
+num(){ sed -n "s/^[[:space:]]*monthly_budget_usd[[:space:]]*=[[:space:]]*\([0-9.]*\).*/\1/p" "${WORK}/repo/infrastructure/$1/terraform.tfvars"; }
+fresh; run >/dev/null 2>&1
+check "omitted: each environment keeps its limit"      bash -c "[[ \"$(num development)/$(num staging)/$(num production)\" == 100/100/300 ]]"
+fresh; run --monthly-budget 250 >/dev/null 2>&1
+check "one amount sets every environment"              bash -c "[[ \"$(num development)/$(num staging)/$(num production)\" == 250/250/250 ]]"
+fresh; run --monthly-budget development=40,production=500.50 >/dev/null 2>&1
+check "per-environment amounts, cents allowed"         bash -c "[[ \"$(num development)/$(num staging)/$(num production)\" == 40/100/500.50 ]]"
+fresh; run --environments development --monthly-budget 75 >/dev/null 2>&1
+check "one amount sets only the project's environments" bash -c "[[ \"$(num development)/$(num staging)\" == 75/100 ]]"
+fresh; run --monthly-budget development=60 --dry-run > "${WORK}/dry.txt" 2>&1
+check "the dry run shows the limit"                    grep -q "monthly_budget_usd=60" "${WORK}/dry.txt"
+check "  and writes nothing"                           bash -c "[[ \"$(num development)\" == 100 ]]"
+check "zero is refused"                                bad --project acme --region eu-west-1 --domain example.org --monthly-budget 0
+check "a negative amount is refused"                   bad --project acme --region eu-west-1 --domain example.org --monthly-budget -5
+check "an unknown environment is refused"              bad --project acme --region eu-west-1 --domain example.org --monthly-budget qa=10
+check "an environment given twice is refused"          bad --project acme --region eu-west-1 --domain example.org --monthly-budget development=10,development=20
+check "an environment the project does not run is refused" bad --project acme --region eu-west-1 --domain example.org --environments development --monthly-budget production=10
+check "a word is refused"                              bad --project acme --region eu-west-1 --domain example.org --monthly-budget lots
+check "an empty value is refused"                      bad --project acme --region eu-west-1 --domain example.org --monthly-budget ""
+
 finish

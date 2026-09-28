@@ -34,7 +34,7 @@ Database engines: `--staging-engines` and `--production-engines` choose, per env
 
 ## 2. Optional: local configuration
 
-`local-config/` holds templates for values you rarely need (a separate assets repository, an older repository's subject format). Skip it for a default setup.
+`local-config/` holds templates for values you rarely need (a separate assets repository, an older repository's subject format), and one you should set: **`BUDGET_ALERT_EMAILS`** in `<environment>.secrets.env`, the addresses for that account's monthly cost budget alerts. Without it no budget is created. The limit is `monthly_budget_usd` in the environment's `terraform.tfvars` (development and staging 100, production 300 by default; `scripts/init-project.sh --monthly-budget` sets it). Re-run `scripts/bootstrap-environment.sh <environment> --set-secrets` after editing the file, so the secret reaches GitHub.
 
 ## 3. Point your credentials at one environment's account
 

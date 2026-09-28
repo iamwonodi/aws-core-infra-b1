@@ -144,6 +144,9 @@ jobs:
       TF_VAR_github_owner_id: ${{ github.repository_owner_id }}
       TF_VAR_github_repository_id: ${{ github.repository_id }}
       TF_VAR_oidc_subject_format: ${{ vars.OIDC_SUBJECT_FORMAT || 'immutable' }}
+      # Addresses for the environment's budget alerts, kept out of the repository
+      # (and, the variable being sensitive, out of the plan output).
+      TF_VAR_budget_alert_emails: ${{ secrets.BUDGET_ALERT_EMAILS }}
     concurrency:
       group: terraform-plan-${{ matrix.environment }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}

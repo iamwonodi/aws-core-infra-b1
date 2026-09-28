@@ -18,7 +18,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/common/github-repo.sh"
 #   Files   infrastructure/<env>/terraform.tfvars   project_name, aws_region,
 #                                                   domain_name, private_domain,
 #                                                   database_engines (staging and
-#                                                   production, when given)
+#                                                   production, when given),
+#                                                   monthly_budget_usd (when given)
 #           infrastructure/<env>/backend.tf         state bucket and region
 #
 #   GitHub  Environment <env>        guards the job that changes the live
@@ -37,7 +38,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/common/github-repo.sh"
 #   scripts/init-project.sh --project NAME --region REGION --domain BASE \
 #       [--private-domain BASE] [--reviewers login1,login2] [--repo OWNER/REPO] \
 #       [--environments LIST] [--staging-engines LIST] [--production-engines LIST] \
-#       [--skip-github] [--dry-run]
+#       [--monthly-budget USD | --monthly-budget ENV=USD,...] [--skip-github] [--dry-run]
 #
 #   --domain BASE   production serves BASE, staging serves staging.BASE and
 #                   development serves dev.BASE (e.g. example.org).
@@ -54,6 +55,14 @@ source "$(dirname "${BASH_SOURCE[0]}")/common/github-repo.sh"
 #                   current list is left as it is. Each engine is billed while it
 #                   runs, so list only what a service there uses. Development's
 #                   engines come from the database engines repository instead.
+#   --monthly-budget USD | ENV=USD,...
+#                   the monthly cost budget of each environment's AWS account, in
+#                   US dollars: one amount for every environment being set up, or
+#                   one per environment (development=100,production=300). Omitted,
+#                   each environment keeps its current monthly_budget_usd. The
+#                   alerts go to the addresses in the environment's
+#                   BUDGET_ALERT_EMAILS secret (local-config/<env>.secrets.env);
+#                   without any, no budget is created.
 #   --dry-run       show what would change; write and call nothing.
 #   --skip-github   only rewrite files.
 #
@@ -68,6 +77,7 @@ ENVIRONMENTS_ARG=""
 
 PROJECT="" REGION="" DOMAIN="" PRIVATE_DOMAIN="" REVIEWERS="" REPO=""
 STAGING_ENGINES="" PRODUCTION_ENGINES=""
+MONTHLY_BUDGET=""
 SKIP_GITHUB=false
 DRY_RUN=false
 
@@ -84,6 +94,7 @@ while [[ $# -gt 0 ]]; do
     --environments)       ENVIRONMENTS_ARG="${2:-}"; shift 2 ;;
     --staging-engines)    STAGING_ENGINES="${2:-}"; [[ -n "${STAGING_ENGINES}" ]] || STAGING_ENGINES="(empty)"; shift 2 ;;
     --production-engines) PRODUCTION_ENGINES="${2:-}"; [[ -n "${PRODUCTION_ENGINES}" ]] || PRODUCTION_ENGINES="(empty)"; shift 2 ;;
+    --monthly-budget) MONTHLY_BUDGET="${2:-}"; [[ -n "${MONTHLY_BUDGET}" ]] || MONTHLY_BUDGET="(empty)"; shift 2 ;;
     --skip-github)    SKIP_GITHUB=true; shift ;;
     --dry-run)        DRY_RUN=true; shift ;;
     -h|--help)        usage; exit 0 ;;
@@ -162,6 +173,40 @@ for engines_env in staging production; do
   fi
 done
 
+# --monthly-budget: one amount for every environment being set up, or
+# ENV=USD pairs. Each amount is a positive number of dollars (cents allowed).
+declare -A BUDGET_FOR=()
+if [[ -n "${MONTHLY_BUDGET}" ]]; then
+  AMOUNT_PATTERN='^[0-9]+(\.[0-9]{1,2})?$'
+  if [[ "${MONTHLY_BUDGET}" =~ ${AMOUNT_PATTERN} ]]; then
+    for budget_env in "${ENVIRONMENTS[@]}"; do BUDGET_FOR[${budget_env}]="${MONTHLY_BUDGET}"; done
+  else
+    IFS=',' read -ra budget_pairs <<< "${MONTHLY_BUDGET}"
+    for pair in "${budget_pairs[@]}"; do
+      budget_env="${pair%%=*}" amount="${pair#*=}"
+      if [[ "${pair}" != *=* || ! "${budget_env}" =~ ^(development|staging|production)$ || ! "${amount}" =~ ${AMOUNT_PATTERN} ]]; then
+        echo "ERROR: --monthly-budget takes one amount (100) or ENV=USD pairs (development=100,production=300); '${pair}' is neither." >&2
+        exit 1
+      fi
+      if [[ -n "${BUDGET_FOR[${budget_env}]:-}" ]]; then
+        echo "ERROR: --monthly-budget gives ${budget_env} more than once." >&2
+        exit 1
+      fi
+      if [[ " ${ENVIRONMENTS[*]} " != *" ${budget_env} "* ]]; then
+        echo "ERROR: --monthly-budget names ${budget_env}, which is not one of this project's environments (${ENVIRONMENTS[*]})." >&2
+        exit 1
+      fi
+      BUDGET_FOR[${budget_env}]="${amount}"
+    done
+  fi
+  for budget_env in "${!BUDGET_FOR[@]}"; do
+    if [[ "${BUDGET_FOR[${budget_env}]}" =~ ^0+(\.0+)?$ ]]; then
+      echo "ERROR: --monthly-budget must be more than 0 (${budget_env})." >&2
+      exit 1
+    fi
+  done
+fi
+
 echo "Environments: ${ENVIRONMENTS[*]}"
 if [[ "${DRY_RUN}" != "true" ]]; then
   jq -n --argjson e "${ENVIRONMENTS_JSON}" '{environments: $e}' > "${ENVIRONMENTS_FILE}"
@@ -216,6 +261,22 @@ set_value() {
   rm -f "${tmp}"
 }
 
+# Replaces the unquoted number on the line that sets KEY.
+set_number() {
+  local file="$1" key="$2" value="$3" tmp
+  tmp="$(mktemp)"
+
+  if ! grep -qE "^[[:space:]]*${key}[[:space:]]*=[[:space:]]*[0-9]" "${file}"; then
+    rm -f "${tmp}"
+    echo "ERROR: ${file} has no '${key} = <number>' line to set." >&2
+    exit 1
+  fi
+
+  sed -E "s|^([[:space:]]*${key}[[:space:]]*=[[:space:]]*)[0-9.]+|\1${value}|" "${file}" > "${tmp}"
+  cat "${tmp}" > "${file}"
+  rm -f "${tmp}"
+}
+
 # "postgres,mysql" -> ["postgres", "mysql"]; "none" -> []
 engines_hcl() {
   local list="$1"
@@ -248,18 +309,20 @@ engines_for() {
 }
 
 update_files() {
-  local env dir engines
+  local env dir engines budget
   for env in "${ENVIRONMENTS[@]}"; do
     dir="${REPO_ROOT}/infrastructure/${env}"
     [[ -f "${dir}/terraform.tfvars" && -f "${dir}/backend.tf" ]] \
       || { echo "ERROR: ${dir} is missing terraform.tfvars or backend.tf." >&2; exit 1; }
 
     engines="$(engines_for "${env}")"
-    echo "  ${env}: project=${PROJECT} region=${REGION} domain=$(domain_for "${env}" "${DOMAIN}") state=${PROJECT}-${env}-tfstate${engines:+ database_engines=${engines}}"
+    budget="${BUDGET_FOR[${env}]:-}"
+    echo "  ${env}: project=${PROJECT} region=${REGION} domain=$(domain_for "${env}" "${DOMAIN}") state=${PROJECT}-${env}-tfstate${engines:+ database_engines=${engines}}${budget:+ monthly_budget_usd=${budget}}"
 
     [[ "${DRY_RUN}" == "true" ]] && continue
 
     set_value "${dir}/terraform.tfvars" project_name "${PROJECT}"
+    [[ -n "${budget}" ]] && set_number "${dir}/terraform.tfvars" monthly_budget_usd "${budget}"
     set_value "${dir}/terraform.tfvars" aws_region "${REGION}"
     set_value "${dir}/terraform.tfvars" domain_name "$(domain_for "${env}" "${DOMAIN}")"
     set_value "${dir}/terraform.tfvars" private_domain "$(domain_for "${env}" "${PRIVATE_DOMAIN}")"
