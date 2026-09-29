@@ -4,6 +4,17 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 INIT="${SCRIPTS}/init-project.sh"
 SOURCE_ROOT="$(cd "${SCRIPTS}/.." && pwd)"
 
+# These tests turn a copy of this repository's own templates into a project, so
+# they need the blueprint's templates. In a project made from it, init-project.sh
+# has already run (no CHANGE_ME left, fewer environments): skip, rather than
+# fail every Script Tests run there. The blueprint is where init-project.sh is
+# tested (test_init_in_project.sh checks both cases).
+if ! grep -q CHANGE_ME "${SOURCE_ROOT}/infrastructure/development/terraform.tfvars"; then
+  echo "  skipped: this project has been initialised; init-project is tested in the blueprint"
+  finish
+  exit $?
+fi
+
 fresh(){
   rm -rf "${WORK}/repo"; mkdir -p "${WORK}/repo/scripts/ci"
   cp -r "${SOURCE_ROOT}/infrastructure" "${WORK}/repo/infrastructure"
