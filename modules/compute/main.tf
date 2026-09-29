@@ -212,7 +212,7 @@ module "private_launch_template" {
 }
 
 module "private_autoscaling_group" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-autoscaling.git?ref=v3.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-autoscaling.git?ref=v3.0.1"
 
   project_name = var.project_name
   environment  = var.environment
@@ -286,7 +286,7 @@ module "internal_launch_template" {
 }
 
 module "internal_autoscaling_group" {
-  source = "git::https://github.com/iamwonodi/terraform-aws-autoscaling.git?ref=v3.0.0"
+  source = "git::https://github.com/iamwonodi/terraform-aws-autoscaling.git?ref=v3.0.1"
 
   project_name = var.project_name
   environment  = var.environment
