@@ -13,6 +13,11 @@ output "domain_name" {
   value       = var.domain_name
 }
 
+output "public_name_servers" {
+  description = "The four name servers the domain's NS records at the registrar must point at. Fixed: a destroy keeps them."
+  value       = module.dns_delegation.name_servers
+}
+
 output "core_deploy_role_arn" {
   description = "ARN of the core deployment role. Set this repository's TF_AWS_ROLE_ARN secret to this value."
   value       = module.github_oidc.core_deploy_role_arn

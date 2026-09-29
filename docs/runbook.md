@@ -184,14 +184,21 @@ What then reaches the engine:
 
 ## Destroying an environment
 
-Run **Terraform Destroy** for the environment. It destroys everything in the environment's state **except the OIDC provider and the core role** CI signs in with (`module.github_oidc`, and `module.github_identity`, which it reads): destroying the role it runs as would cut the run off part-way, with the state unwritten and its lock left behind. Kept, a rebuild is an ordinary plan and apply: no bootstrap, no new `TF_AWS_ROLE_ARN`.
+Run **Terraform Destroy** for the environment. It destroys everything in the environment's state **except**:
+
+- **the OIDC provider and the core role** CI signs in with (`module.github_oidc`, and `module.github_identity`, which it reads): destroying the role it runs as would cut the run off part-way, with the state unwritten and its lock left behind. Kept, a rebuild needs no bootstrap and no new `TF_AWS_ROLE_ARN`;
+- **the public zone's delegation set** (`module.dns_delegation`): the rebuilt public zone answers on the same four name servers, so the registrar's `NS` records still point at it and the certificates validate. Without it, every rebuilt zone gets new name servers and the apply hangs on its certificates until the registrar is updated.
+
+Kept, a rebuild is an ordinary plan and apply.
 
 Before it:
 
 1. **Apply once first** if this blueprint version is new to the environment. Development turns off the protections that would stop a destroy (the deploy bucket's `force_destroy`, the sign-in pool's deletion protection, and the two secrets' recovery window, set to 0 so a rebuild can reuse their names), and a destroy uses the settings already applied, not the ones in the code. Staging and production keep them on: a destroy there stops at them, on purpose.
 2. **Put a reviewer on the environment** if it has none (development has none by default), so the destroy waits for you after its plan. Read the plan in the *Destroy Plan* job's summary before approving *Destroy Apply*.
 
-Left behind, outside Terraform's state, and billed until removed: the golden AMI and its snapshot (Image Builder does not deregister it), and the database host's backup snapshots. The data volume itself is destroyed.
+Left behind, outside Terraform's state, and billed until removed: the golden AMI and its snapshot (Image Builder does not deregister it), and the database host's backup snapshots. The data volume itself is destroyed. List them (`aws ec2 describe-images --owners self`, `aws ec2 describe-snapshots --owner-ids self`), deregister the AMI first, then delete its snapshot and the backups.
+
+**First adoption of the delegation set.** An environment built before the delegation set existed has a public zone with name servers of its own. Its next apply replaces that zone with one on the set. Nothing hangs (the certificates are already issued and are not replaced), but the domain is unreachable until you update its four `NS` records at the registrar to `terraform output public_name_servers`. Once only; from then on a destroy and rebuild changes nothing there.
 
 **To retire an environment for good**, after the workflow, remove what it kept, from your machine with the account's administrator credentials:
 
@@ -202,6 +209,20 @@ terraform -chdir=infrastructure/<environment> destroy -var="assets_path=../../as
 ```
 
 then remove it from `environments.json` and delete its state bucket (`scripts/destroy-terraform-backend.sh <environment>`, which refuses while the state still tracks anything).
+
+## Recovering from a cancelled or failed apply
+
+A cancelled apply is not always a clean stop. GitHub gives Terraform a few seconds to finish, then kills it (the log ends with *Terminate orphan process: … (terraform)*). The same happens when an apply outlives its one-hour credentials. Terraform saves its state as it goes, so almost everything it created is recorded, but three things need checking before the next plan, all from your machine with the account's administrator credentials:
+
+1. **The lock.** A killed apply cannot release it, and every plan is refused until it is gone. Read it, and check it is that apply's (`OperationTypeApply`, taken by a `runner@…`, at the time the apply started):
+   ```bash
+   aws s3 cp s3://<project>-<environment>-tfstate/core/terraform.tfstate.tflock - ; echo
+   terraform -chdir=infrastructure/<environment> force-unlock -force <ID>
+   ```
+2. **Resources created after the last state save.** Compare the killed apply's log with the next plan: anything the log shows as *Creation complete* that the plan wants to create again exists in AWS but not in the state, and the apply would fail creating a duplicate. Delete it if nothing uses it yet (it is created again, and recorded, by the apply), or `terraform import` it.
+3. **Tainted resources.** A resource that was still being created, or whose creation failed, is marked tainted and replaced by the next plan. Find out why it failed first (for the golden image: `aws imagebuilder list-image-build-versions`), or the replacement fails the same way.
+
+Then plan and apply as usual.
 
 ## If it stops
 
@@ -219,6 +240,9 @@ then remove it from `environments.json` and delete its state bucket (`scripts/de
 | a tag was pushed and nothing built | `RELEASE_TOKEN` is missing |
 | destroy: `BucketNotEmpty`, or *deletion protection is activated* on the user pool | the environment has not applied since its protections were turned off (*Destroying an environment*, step 1) |
 | destroy: the VPC *has dependencies and cannot be deleted* | a group CloudFront created for the VPC origin (`CloudFront-VPCOrigins-Service-SG`) may outlive it: delete that group by hand, then run the destroy again |
+| apply: the certificate validations *Still creating…* for many minutes | the domain's `NS` records at the registrar do not point at `terraform output public_name_servers` (first apply, or the delegation set's first adoption). Fix them within the hour, or cancel and follow *Recovering from a cancelled or failed apply* |
+| the golden image build fails: *Failed to download … bootstrap.sh* | its build instance could not reach the internet. The build waits for the NAT and its routes (`internal_egress_subnet_ids`), so look at the NAT instance and the internal route tables |
+| an apply log ends with *Terminate orphan process: … (terraform)* | a cancel or a credential expiry killed it: *Recovering from a cancelled or failed apply* |
 
 ---
 

@@ -41,11 +41,21 @@ variable "private_subnet_ids" {
 
 variable "internal_subnet_ids" {
   type        = list(string)
-  description = "Internal-tier subnet IDs. The internal-tier fleet is launched here, and the first entry is also used as the temporary build subnet for the Ubuntu AMI."
+  description = "Internal-tier subnet IDs. The internal-tier fleet is launched here."
 
   validation {
     condition     = length(var.internal_subnet_ids) > 0
     error_message = "internal_subnet_ids must contain at least one subnet ID."
+  }
+}
+
+variable "image_subnet_id" {
+  type        = string
+  description = "Subnet the golden image's build instance is launched into. It must already reach the internet when the build starts: pass the first of the network module's internal_egress_subnet_ids, which waits for the NAT and its routes."
+
+  validation {
+    condition     = trimspace(var.image_subnet_id) != ""
+    error_message = "image_subnet_id must not be empty."
   }
 }
 

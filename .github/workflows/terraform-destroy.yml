@@ -3,7 +3,7 @@ name: Terraform Destroy
 # ==============================================================================
 # Manually destroys an environment's infrastructure, or every environment this
 # project runs, in sequence. CI's own way in (the OIDC provider and the core
-# role) is kept: see SCOPE. This is the only destructive
+# role) and the public zone's delegation set are kept: see SCOPE. This is the only destructive
 # workflow in this repository — everything here is designed around making
 # it hard to trigger by accident and easy to review before anything is
 # actually destroyed.
@@ -44,7 +44,11 @@ name: Terraform Destroy
 # it signs in with would cut the run off part-way: nothing else depends on the
 # role's AdministratorAccess attachment, so Terraform may delete it first, and
 # every later call (the rest of the destroy, writing the state, releasing its
-# lock) would be refused. Kept, the next apply needs no bootstrap. To remove
+# lock) would be refused. Kept, the next apply needs no bootstrap.
+#
+# module.dns_delegation is kept too: the reusable delegation set the public
+# zone is built on. Kept, a rebuilt zone answers on the same name servers, so
+# the registrar's delegation still works and the certificates validate. To remove
 # them too, when retiring an environment, see docs/runbook.md ("Destroying an
 # environment"). scripts/ci/resolve-destroy-targets.sh builds the list.
 #
@@ -189,7 +193,7 @@ jobs:
           COUNT="$(grep -c . "${RUNNER_TEMP}/destroy-targets.txt" || true)"
 
           if [[ "${COUNT}" -eq 0 ]]; then
-            echo "Nothing to destroy in ${{ matrix.environment }}: its state holds only CI's own sign-in, or nothing."
+            echo "Nothing to destroy in ${{ matrix.environment }}: its state holds only what the destroy keeps, or nothing."
             echo "has_changes=false" >> "${GITHUB_OUTPUT}"
           else
             echo "Will plan the destruction of:"
@@ -329,7 +333,7 @@ jobs:
       - name: Summary
         run: |
           if [[ "${{ steps.check.outputs.present }}" == "true" ]]; then
-            echo "Destroyed **${{ matrix.environment }}**, except the OIDC provider and the core role CI signs in with. The state bucket is managed outside Terraform and was not touched." >> "${GITHUB_STEP_SUMMARY}"
+            echo "Destroyed **${{ matrix.environment }}**, except the OIDC provider and the core role CI signs in with, and the public zone's delegation set. The state bucket is managed outside Terraform and was not touched." >> "${GITHUB_STEP_SUMMARY}"
           else
-            echo "Nothing to destroy in **${{ matrix.environment }}**: its state holds only CI's own sign-in, or nothing." >> "${GITHUB_STEP_SUMMARY}"
+            echo "Nothing to destroy in **${{ matrix.environment }}**: its state holds only what the destroy keeps, or nothing." >> "${GITHUB_STEP_SUMMARY}"
           fi

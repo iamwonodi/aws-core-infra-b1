@@ -7,7 +7,8 @@ set -euo pipefail
 #
 # Reads an environment's "terraform state list" on stdin and prints what the
 # destroy workflow destroys, one Terraform address per line: every top-level
-# module and root resource in the state EXCEPT the ones CI signs in with.
+# module and root resource in the state EXCEPT the ones CI signs in with and
+# the public zone's delegation set.
 #
 # Why they are kept: the destroy runs as the core role. Nothing else depends on
 # that role or its AdministratorAccess attachment, so a full destroy may delete
@@ -21,6 +22,13 @@ set -euo pipefail
 # scripts/ci/check-bootstrap-closure.py already fails CI if github_oidc ever
 # depends on anything else, which is what keeps this list complete.
 #
+# module.dns_delegation is kept too: the reusable delegation set the public
+# zone is created with. The domain's NS records at the registrar point at its
+# name servers; kept, a rebuilt zone answers on the same ones, and the
+# certificates validate without anyone touching the registrar.
+# scripts/ci/check-environment-wiring.py fails CI if any kept module comes to
+# depend on one this destroys.
+#
 # Data sources are skipped: a destroy has nothing to do to them. An empty
 # output means there is nothing left to destroy.
 #
@@ -33,7 +41,7 @@ if [[ $# -ne 0 ]]; then
   exit 1
 fi
 
-KEPT_MODULES=("github_oidc" "github_identity")
+KEPT_MODULES=("github_oidc" "github_identity" "dns_delegation")
 
 kept() {
   local name="$1" module

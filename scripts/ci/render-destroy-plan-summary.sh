@@ -30,7 +30,7 @@ echo "### Terraform Destroy Plan — ${ENVIRONMENT}"
 
 if [[ "${HAS_CHANGES}" != "true" ]]; then
   echo ""
-  echo "Nothing to destroy: this environment's state holds only CI's own sign-in, or nothing."
+  echo "Nothing to destroy: this environment's state holds only what the destroy keeps, or nothing."
   exit 0
 fi
 
@@ -41,7 +41,7 @@ if [[ -z "${PLAN_TEXT_FILE}" || ! -f "${PLAN_TEXT_FILE}" ]]; then
 fi
 
 echo ""
-echo "Kept on purpose: the OIDC provider and the core role this workflow runs as (module.github_oidc, module.github_identity)."
+echo "Kept on purpose: the OIDC provider and the core role this workflow runs as (module.github_oidc, module.github_identity), and the public zone's delegation set (module.dns_delegation)."
 echo ""
 echo '```'
 head -c "${MAX_BYTES}" "${PLAN_TEXT_FILE}"

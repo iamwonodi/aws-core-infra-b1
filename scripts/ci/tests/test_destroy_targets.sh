@@ -13,6 +13,8 @@ module.github_oidc.aws_iam_openid_connect_provider.github[0]
 module.github_oidc.aws_iam_role.core_deploy_role[0]
 module.github_oidc.aws_iam_role_policy_attachment.core["arn:aws:iam::aws:policy/AdministratorAccess"]
 module.github_service_roles.aws_iam_role.github_service_roles["modart-development-web-infra"]
+module.dns_delegation.aws_route53_delegation_set.this
+module.edge.module.route53.aws_route53_zone.this["public"]
 module.network.module.vpc_base.aws_vpc.this
 module.network.module.vpc_base.aws_subnet.private["10.10.17.0/24"]
 module.compute.module.deploy.module.bucket.aws_s3_bucket.this
@@ -27,6 +29,8 @@ has(){ grep -qxF "$1" <<< "${targets}"; }
 
 check "keeps the core role and OIDC provider"              bash -c "! grep -q '^module.github_oidc' <<< '${targets}'"
 check "keeps github_identity, which github_oidc reads"     bash -c "! grep -q '^module.github_identity' <<< '${targets}'"
+check "keeps the public zone's delegation set"             bash -c "! grep -q '^module.dns_delegation' <<< '${targets}'"
+check "destroys the public zone itself"                    has "module.edge"
 check "destroys the service roles"                         has "module.github_service_roles"
 check "destroys each other module, once"                   test "$(grep -c '^module.network$' <<< "${targets}")" = 1
 check "a nested module is its top-level module"            has "module.compute"
@@ -34,9 +38,9 @@ check "an indexed module is the whole module"              has "module.monthly_b
 check "destroys root resources"                            has "terraform_data.environment_invariants"
 check "a root resource's index is dropped"                 has "aws_ssm_parameter.example"
 check "skips data sources"                                 bash -c "! grep -q '^data\.' <<< '${targets}'"
-check "the full list"                                      test "$(wc -l <<< "${targets}")" = 7
+check "the full list"                                      test "$(wc -l <<< "${targets}")" = 8
 
-only_kept="$(printf '%s\n' 'module.github_oidc.aws_iam_role.core_deploy_role[0]' 'module.github_identity.terraform_data.identity_invariants' 'data.aws_region.current' | bash "$T")"
+only_kept="$(printf '%s\n' 'module.github_oidc.aws_iam_role.core_deploy_role[0]' 'module.github_identity.terraform_data.identity_invariants' 'module.dns_delegation.aws_route53_delegation_set.this' 'data.aws_region.current' | bash "$T")"
 check "nothing but the kept modules: nothing to destroy"   test -z "${only_kept}"
 check "an empty state: nothing to destroy"                 test -z "$(bash "$T" < /dev/null)"
 check "Windows line endings are tolerated"                 test "$(printf 'module.edge.aws_lb.this\r\n' | bash "$T")" = "module.edge"

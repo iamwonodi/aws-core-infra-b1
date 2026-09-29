@@ -71,7 +71,7 @@ Open a pull request. `terraform-plan.yml` plans each changed environment under i
 
 The first full apply creates the network, edge, fleets and database host. It fails fast, before touching AWS, if any `CHANGE_ME` remains.
 
-**DNS delegation, during the first full apply.** The apply creates a public Route 53 zone for the environment's domain (`dev.<base>` in development) and then waits for its certificates to be validated through public DNS. That only succeeds once the zone that serves the base domain delegates this name to the new zone. As soon as the new zone exists (the apply is waiting on `module.edge.module.acm`), read its name servers:
+**DNS delegation, during the first full apply.** The apply creates a public Route 53 zone for the environment's domain (`dev.<base>` in development) and then waits for its certificates to be validated through public DNS. That only succeeds once the zone that serves the base domain delegates this name to the new zone. The zone answers on the four name servers of the environment's reusable delegation set (`module.dns_delegation`). As soon as the zone exists (the apply is waiting on `module.edge.module.acm`), read them:
 
 ```bash
 ZONE=$(aws route53 list-hosted-zones-by-name --dns-name dev.example.org \
@@ -79,7 +79,11 @@ ZONE=$(aws route53 list-hosted-zones-by-name --dns-name dev.example.org \
 aws route53 get-hosted-zone --id "$ZONE" --query 'DelegationSet.NameServers' --output text
 ```
 
-and add them wherever the base domain's DNS is managed, as four `NS` records for the host `dev` (for production, which serves the base domain itself, change the domain's name servers at the registrar instead). The private zone has the same name; its name servers are not the ones to use. Check with `nslookup -type=NS dev.example.org 8.8.8.8`; the certificates then validate within minutes and the apply continues. Delegation is done once per environment.
+(after the apply, `terraform output public_name_servers` gives the same four) and add them wherever the base domain's DNS is managed, as four `NS` records for the host `dev` (for production, which serves the base domain itself, change the domain's name servers at the registrar instead). The private zone has the same name; its name servers are not the ones to use. Check with `nslookup -type=NS dev.example.org 8.8.8.8`; the certificates then validate within minutes and the apply continues.
+
+Delegation is done **once per environment**: the destroy workflow keeps the delegation set, so a destroyed and rebuilt zone answers on the same name servers. Only retiring an environment for good removes it.
+
+**Do it within the hour.** The apply's AWS credentials last one hour and the certificates wait up to 75 minutes, so an apply still waiting on delegation near the hour will fail without saving its final state. If that happens, follow *Recovering from a cancelled or failed apply* in the runbook.
 
 ## 6. Onboard a service
 

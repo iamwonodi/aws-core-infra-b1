@@ -39,11 +39,12 @@ terraform -chdir=infrastructure/<env> init -backend=false && terraform -chdir=in
 bash modules/platform/host-scripts/tests/run-all.sh
 bash scripts/ci/tests/run-all.sh
 bash modules/network/tests/run.sh
-(cd modules/platform/<module> && terraform init -backend=false && terraform test)     # identity, service-roles, service-boundary, contract, engines-role, people, front-door, tools-role
+(cd modules/platform/<module> && terraform init -backend=false && terraform test)     # identity, service-roles, service-boundary, contract, engines-role, people, front-door, tools-role, dns-delegation
 (cd modules/database/schedule && terraform init -backend=false && terraform test)
 bash modules/database/provisioning/lambda/tests/run.sh
 python3 scripts/ci/check-bootstrap-closure.py infrastructure/*
 python3 scripts/ci/check-host-dependencies.py modules infrastructure
+python3 scripts/ci/check-environment-wiring.py infrastructure/*
 terraform -chdir=modules/database/host init -backend=false && bash scripts/ci/check-data-volume-plan.sh
 ```
 

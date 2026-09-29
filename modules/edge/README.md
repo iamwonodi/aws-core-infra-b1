@@ -82,6 +82,8 @@ This module owns no VPC/subnet/security-group resources of its own. Five inputs 
 | `internal_subnet_ids` | `internal_subnet_ids` -- where the internal-tier ALB lives |
 | `private_security_group_id` | `private_security_group_id` -- allowed to reach the internal-tier ALB |
 
+One comes from the `dns-delegation` platform module: `public_delegation_set_id`, its `id`. The public zone is created with that reusable delegation set, so a zone destroyed and rebuilt keeps the name servers the registrar points at. Left null, Route 53 gives every new zone new name servers.
+
 ---
 
 ## What this module hands back

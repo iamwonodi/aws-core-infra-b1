@@ -143,16 +143,17 @@ Each service runs as its own Compose project (`--project-name <service>`). Compo
 
 ## Inputs this module needs from elsewhere
 
-This module owns no networking of its own. Four inputs come from the `network` domain module's outputs:
+This module owns no networking of its own. Five inputs come from the `network` domain module's outputs:
 
 | Input | From `network` output |
 | --- | --- |
 | `private_subnet_ids` | `private_subnet_ids` |
 | `internal_subnet_ids` | `internal_subnet_ids` |
+| `image_subnet_id` | `internal_egress_subnet_ids[0]` |
 | `private_security_group_id` | `private_security_group_id` |
 | `internal_security_group_id` | `internal_security_group_id` |
 
-`internal_subnet_ids` is used twice: once (in full) as where the internal-tier fleet lives, and once (just its first entry) as the temporary subnet the AMI build process launches its build instance into.
+`image_subnet_id` is where the AMI build launches its build instance. It comes from `internal_egress_subnet_ids`, which the network module hands out only once the NAT and its routes exist: the build downloads Image Builder's bootstrap the moment it starts, and a build started with a plain subnet ID a few seconds before the NAT fails.
 
 There is no external `user_data` input anymore -- this module renders its own bootstrap script internally (`assets/bootstrap.sh` and `assets/update.sh`), matching how the `database` domain module does.
 

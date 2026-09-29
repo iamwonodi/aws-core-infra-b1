@@ -218,6 +218,21 @@ module "network" {
 }
 
 ################################################################################
+# DNS DELEGATION
+#
+# The public zone's name servers, fixed: a reusable delegation set the destroy
+# workflow keeps, like CI's own role. The domain's NS records at the registrar
+# point at these once, and a rebuilt zone keeps answering on them.
+################################################################################
+
+module "dns_delegation" {
+  source = "../../modules/platform/dns-delegation"
+
+  project_name = var.project_name
+  environment  = local.environment
+}
+
+################################################################################
 # EDGE
 #
 # The assets bucket, CloudFront, both ALBs, Route 53, and ACM -- how a
@@ -247,6 +262,10 @@ module "edge" {
 
   domain_name    = var.domain_name
   private_domain = var.private_domain
+
+  # The destroy keeps this set, so a rebuilt public zone answers on the same
+  # name servers and the registrar's delegation keeps working.
+  public_delegation_set_id = module.dns_delegation.id
 
   assets_path                               = var.assets_path
   assets_force_destroy                      = var.assets_force_destroy
@@ -284,8 +303,9 @@ module "image" {
 
   # The build installs packages, Docker and the AWS CLI, so it needs outbound
   # internet access: the internal tier, which routes through NAT, never the
-  # isolated one.
-  subnet_id          = module.network.internal_subnet_ids[0]
+  # isolated one. The egress output waits for the NAT and its routes, so the
+  # build never starts before it can reach the internet.
+  subnet_id          = module.network.internal_egress_subnet_ids[0]
   security_group_ids = [module.network.internal_security_group_id]
 
   tags = local.common_tags

@@ -34,7 +34,8 @@ module "image" {
 
   instance_types = var.ami_instance_types
 
-  subnet_id          = var.internal_subnet_ids[0]
+  # Must reach the internet as the build starts (var.image_subnet_id).
+  subnet_id          = var.image_subnet_id
   security_group_ids = [var.internal_security_group_id]
 
   build_image   = var.build_image

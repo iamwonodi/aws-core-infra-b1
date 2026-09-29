@@ -19,6 +19,8 @@ on:
       - "scripts/**"
       - "infrastructure/**"
       - "modules/database/host/*.tf"
+      - "modules/network/outputs.tf"
+      - "modules/compute/main.tf"
       - ".github/workflows/script-tests.yml"
   push:
     branches:
@@ -31,6 +33,8 @@ on:
       - "scripts/**"
       - "infrastructure/**"
       - "modules/database/host/*.tf"
+      - "modules/network/outputs.tf"
+      - "modules/compute/main.tf"
       - ".github/workflows/script-tests.yml"
 
 permissions:
@@ -96,3 +100,11 @@ jobs:
       # bucket then replaces the volume.
       - name: Data Volume Is Not Held Back
         run: python3 scripts/ci/check-host-dependencies.py modules infrastructure
+
+      # Two things a rebuild from nothing hit: the image build starting before
+      # its route to the internet existed, and a rebuilt public zone answering
+      # on name servers the registrar does not point at.
+      - name: Rebuild Wiring
+        run: |
+          python3 scripts/ci/check-environment-wiring.py \
+            infrastructure/development infrastructure/staging infrastructure/production

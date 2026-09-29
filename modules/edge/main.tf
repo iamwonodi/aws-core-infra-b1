@@ -87,6 +87,10 @@ module "route53" {
     public = {
       domain_name = var.domain_name
       zone_type   = "public"
+
+      # A kept, reusable delegation set: a rebuilt zone keeps the name servers
+      # the registrar points at (modules/platform/dns-delegation).
+      delegation_set_id = var.public_delegation_set_id
     }
 
     private = {

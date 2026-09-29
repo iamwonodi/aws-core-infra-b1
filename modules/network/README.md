@@ -37,6 +37,7 @@ This tiering is the backbone of the whole project's security model: a request fr
 | --- | --- |
 | `vpc_id` | `edge` (private Route 53 zone association), `database` (isolated tier placement, indirectly through subnet/SG outputs) |
 | `private_subnet_ids` / `internal_subnet_ids` / `isolated_subnet_ids` | `compute` and `edge` (fleet/ALB placement), `database` (database placement) |
+| `internal_egress_subnet_ids` | the golden image build: the internal subnets, handed out only once the NAT, its routes, the NACLs and the outbound rule exist |
 | `public_subnet_ids` | Available for future use; nothing currently consumes it |
 | `private_security_group_id` / `internal_security_group_id` / `isolated_security_group_id` | `compute` and `edge` (attaching fleets/ALBs to the right tier), `database` (database placement) |
 | `public_security_group_id` | Available for future use; nothing currently consumes it |

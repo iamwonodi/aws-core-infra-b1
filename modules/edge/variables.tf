@@ -93,6 +93,17 @@ variable "domain_name" {
   }
 }
 
+variable "public_delegation_set_id" {
+  type        = string
+  default     = null
+  description = "Reusable delegation set the public zone is created with (the dns-delegation module's id), so a rebuilt zone keeps the name servers the registrar points at. Null: Route 53 picks new name servers for every new zone."
+
+  validation {
+    condition     = var.public_delegation_set_id == null || trimspace(coalesce(var.public_delegation_set_id, " ")) != ""
+    error_message = "public_delegation_set_id must not be empty when set."
+  }
+}
+
 variable "private_domain" {
   type        = string
   description = "Domain name used for internal, VPC-only DNS resolution. May be the same value as domain_name -- the private Route 53 hosted zone is keyed by a logical label, not by this domain name, so a public and a private zone sharing the identical domain name (split-horizon DNS) is fully supported, not a conflict."
