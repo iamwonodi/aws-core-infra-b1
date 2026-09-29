@@ -4,9 +4,6 @@
 # The trust relationship CI itself uses to deploy this environment. 
 ################################################################################
 
-# Read once and shared: the account the permissions apply to.
-data "aws_caller_identity" "current" {}
-
 # The token subjects AWS trusts for the core repository. Both the repository
 # name and its numeric IDs are supplied by whoever runs Terraform (CI passes
 # them from the GitHub context), never committed -- this configuration is a
@@ -513,13 +510,6 @@ resource "aws_ssm_parameter" "platform_config" {
 # environment's BUDGET_ALERT_EMAILS secret: addresses stay out of this
 # repository and out of plan output. Without any, no budget is created.
 # ------------------------------------------------------------------------------
-
-locals {
-  budget_alert_emails = [
-    for address in split(",", var.budget_alert_emails) : trimspace(address)
-    if trimspace(address) != ""
-  ]
-}
 
 module "monthly_budget" {
   source = "git::https://github.com/iamwonodi/terraform-aws-budget.git?ref=v1.0.0"

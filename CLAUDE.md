@@ -21,6 +21,7 @@ Each environment is its own AWS account. `network` builds the VPC and tiers, `ed
 ## Conventions
 
 - Terraform `>= 1.6.0`; AWS provider `>= 6.0.0, < 7.0.0`. The version CI uses is `.terraform-version`.
+- File layout: every top-level `locals` block in `locals.tf`, every `data` block in `data.tf`, resources and module calls in `main.tf` (or a file named for its domain); a module that creates nothing has no `main.tf`. Workflows run on `ubuntu-24.04`, never `ubuntu-latest`. `scripts/ci/check-file-layout.sh` fails CI otherwise.
 - Cross-variable invariants are `terraform_data` preconditions, never `check` blocks (a failed check only warns).
 - Modules that need no AWS have `terraform test` suites. Host scripts have offline tests against stubbed `aws`/`docker`/`gh`.
 - SSM paths carry no environment segment. S3 bucket names do.
@@ -45,6 +46,7 @@ bash modules/database/provisioning/lambda/tests/run.sh
 python3 scripts/ci/check-bootstrap-closure.py infrastructure/*
 python3 scripts/ci/check-host-dependencies.py modules infrastructure
 python3 scripts/ci/check-environment-wiring.py infrastructure/*
+bash scripts/ci/check-file-layout.sh .
 terraform -chdir=modules/database/host init -backend=false && bash scripts/ci/check-data-volume-plan.sh
 ```
 

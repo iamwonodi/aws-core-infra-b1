@@ -19,7 +19,7 @@ on:
       - "scripts/**"
       - "infrastructure/**"
       - "modules/database/host/*.tf"
-      - "modules/network/outputs.tf"
+      - "modules/**/*.tf"
       - "modules/compute/main.tf"
       - ".github/workflows/script-tests.yml"
   push:
@@ -33,7 +33,7 @@ on:
       - "scripts/**"
       - "infrastructure/**"
       - "modules/database/host/*.tf"
-      - "modules/network/outputs.tf"
+      - "modules/**/*.tf"
       - "modules/compute/main.tf"
       - ".github/workflows/script-tests.yml"
 
@@ -104,6 +104,11 @@ jobs:
       # Two things a rebuild from nothing hit: the image build starting before
       # its route to the internet existed, and a rebuilt public zone answering
       # on name servers the registrar does not point at.
+      # locals only in locals.tf, data only in data.tf, and no workflow on the
+      # floating latest runner image.
+      - name: File Layout
+        run: bash scripts/ci/check-file-layout.sh .
+
       - name: Rebuild Wiring
         run: |
           python3 scripts/ci/check-environment-wiring.py \

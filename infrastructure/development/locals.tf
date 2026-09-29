@@ -22,3 +22,12 @@ locals {
   # module already owns and renders its own database bootstrap scripts.
   # See compute/README.md for the full picture.
 }
+
+# The monthly budget's alert addresses (MONTHLY COST BUDGET in main.tf): the
+# BUDGET_ALERT_EMAILS secret, split on commas and trimmed.
+locals {
+  budget_alert_emails = [
+    for address in split(",", var.budget_alert_emails) : trimspace(address)
+    if trimspace(address) != ""
+  ]
+}

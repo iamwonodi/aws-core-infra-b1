@@ -26,3 +26,63 @@ locals {
   # consumes a rendered user-data script or needs the account-context
   # data sources (aws_region/aws_caller_identity) that rendering used.
 }
+
+# The managed databases (MANAGED DATABASES in main.tf).
+locals {
+  # Every active engine, and the ones among them that run on RDS. mongodb runs on
+  # DocumentDB instead.
+  database_engines   = toset(var.database_engines)
+  rds_engines        = toset([for engine in var.database_engines : engine if contains(["postgres", "mysql"], engine)])
+  documentdb_enabled = contains(var.database_engines, "mongodb")
+
+  # The provisioning function speaks every engine, so each active one gets one.
+  provisioned_engines = local.database_engines
+
+  # Where each active engine is, whichever service runs it.
+  database_endpoints = merge(
+    {
+      for engine in local.rds_engines : engine => {
+        host              = module.database[engine].address
+        port              = module.database[engine].port
+        security_group_id = module.database[engine].security_group_id
+      }
+    },
+    local.documentdb_enabled ? {
+      mongodb = {
+        host              = module.documentdb[0].endpoint
+        port              = module.documentdb[0].port
+        security_group_id = module.documentdb[0].security_group_id
+      }
+    } : {},
+  )
+
+  # The database the administrator connects to before a service's own exists.
+  admin_databases = {
+    postgres = "postgres"
+    mysql    = "platform"
+    mongodb  = "admin" # DocumentDB keeps every user there
+  }
+
+  rds_engine_settings = {
+    postgres = {
+      # PostgreSQL always has a "postgres" database to connect to first.
+      initial_database = null
+      log_exports      = ["postgresql", "upgrade"]
+    }
+    mysql = {
+      # MySQL has no database until one is created with the instance.
+      initial_database = "platform"
+      # error only: the general and audit logs bill for every statement.
+      log_exports = ["error"]
+    }
+  }
+}
+
+# The monthly budget's alert addresses (MONTHLY COST BUDGET in main.tf): the
+# BUDGET_ALERT_EMAILS secret, split on commas and trimmed.
+locals {
+  budget_alert_emails = [
+    for address in split(",", var.budget_alert_emails) : trimspace(address)
+    if trimspace(address) != ""
+  ]
+}

@@ -28,12 +28,6 @@
 # style. They carry the tools' own web addresses.
 # ------------------------------------------------------------------------------
 
-locals {
-  function_name      = "${var.project_name}-${var.environment}-front-door"
-  declaration_prefix = "front-door/"
-  platform_key       = "${local.declaration_prefix}_platform.json"
-}
-
 resource "aws_cognito_user_pool" "this" {
   name = "${var.project_name}-${var.environment}-team"
 
