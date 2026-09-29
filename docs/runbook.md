@@ -240,7 +240,8 @@ Then plan and apply as usual.
 | a tag was pushed and nothing built | `RELEASE_TOKEN` is missing |
 | destroy: `BucketNotEmpty`, or *deletion protection is activated* on the user pool | the environment has not applied since its protections were turned off (*Destroying an environment*, step 1) |
 | destroy: the VPC *has dependencies and cannot be deleted* | a group CloudFront created for the VPC origin (`CloudFront-VPCOrigins-Service-SG`) may outlive it: delete that group by hand, then run the destroy again |
-| apply: the certificate validations *Still creating…* for many minutes | the domain's `NS` records at the registrar do not point at `terraform output public_name_servers` (first apply, or the delegation set's first adoption). Fix them within the hour, or cancel and follow *Recovering from a cancelled or failed apply* |
+| apply: *DNS Delegation Guard* fails, *is not delegated to this environment's name servers* | the domain's `NS` records at the registrar are not the four it lists (`terraform output public_name_servers`). Fix them, wait for the old records' TTL, and apply again. Only for a DNS provider outage: re-run the apply manually with `skip_dns_check` |
+| apply: the certificate validations *Still creating…* for many minutes | the guard was skipped, or the state had no delegation set yet (the delegation set's first adoption). Fix the `NS` records within the hour, or cancel and follow *Recovering from a cancelled or failed apply* |
 | the golden image build fails: *Failed to download … bootstrap.sh* | its build instance could not reach the internet. The build waits for the NAT and its routes (`internal_egress_subnet_ids`), so look at the NAT instance and the internal route tables |
 | an apply log ends with *Terminate orphan process: … (terraform)* | a cancel or a credential expiry killed it: *Recovering from a cancelled or failed apply* |
 

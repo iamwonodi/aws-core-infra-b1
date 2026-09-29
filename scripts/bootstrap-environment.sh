@@ -19,10 +19,14 @@ source "$(dirname "${BASH_SOURCE[0]}")/common/github-repo.sh"
 #   3. Run terraform init against that now-ready backend.
 #   4. Run the FIRST real "terraform apply" for this environment, targeting
 #      ONLY module.github_oidc -- this is what unblocks CI's own
-#      authentication. Everything else this configuration manages is left
-#      for the first real PR to create through the normal reviewed
+#      authentication -- and module.dns_delegation, the public zone's
+#      reusable delegation set. Everything else this configuration manages
+#      is left for the first real PR to create through the normal reviewed
 #      pipeline, not swept into this one unreviewed local apply.
-#   5. Read the resulting core role ARN back out via "terraform output".
+#   5. Read the resulting core role ARN back out via "terraform output", and
+#      print the delegation set's four name servers: set them at the
+#      registrar now, before the first full apply, so its certificates
+#      validate at once instead of waiting on DNS against the clock.
 #   6. Optionally (only with --set-secrets): sync local-config/ values as
 #      this repo's own GitHub Environment variables/secrets, and set the
 #      core role ARN as this repo's own TF_AWS_ROLE_ARN secret.
@@ -433,7 +437,8 @@ bootstrap_environment() {
     terraform init -input=false
 
     echo ""
-    echo "Running terraform apply, targeting module.github_oidc only. Review the"
+    echo "Running terraform apply, targeting module.github_oidc (CI's role) and"
+    echo "module.dns_delegation (the public zone's name servers) only. Review the"
     echo "plan carefully before confirming -- this is the one apply here that no"
     echo "one else will review."
     echo ""
@@ -446,11 +451,12 @@ bootstrap_environment() {
     fi
 
     # -target is safe here only because module.github_oidc depends on nothing
-    # but variables and the pure github_identity module;
-    # scripts/ci/check-bootstrap-closure.py enforces that.
-    # Every root variable needs a value, even for a targeted apply. The OIDC
-    # module never reads the assets, so the repository's own folder does.
-    terraform apply -target=module.github_oidc -var="assets_path=../../assets"
+    # but variables and the pure github_identity module, and
+    # module.dns_delegation on nothing but variables;
+    # scripts/ci/check-bootstrap-closure.py and check-environment-wiring.py
+    # enforce that. Every root variable needs a value, even for a targeted
+    # apply. Neither module reads the assets, so the repository's own folder does.
+    terraform apply -target=module.github_oidc -target=module.dns_delegation -var="assets_path=../../assets"
 
     echo ""
     echo "Reading the core role ARN from the apply output."
@@ -462,6 +468,30 @@ bootstrap_environment() {
     echo ""
     echo "core_deploy_role_arn:"
     echo "  ${CORE_ARN:-<none -- create_core_role is false for this config>}"
+
+    # Read from the state rather than "terraform output": a targeted apply is
+    # not guaranteed to have written every root output.
+    local DOMAIN NAME_SERVERS
+    DOMAIN="$(sed -n 's/^domain_name[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' terraform.tfvars | head -1)"
+    NAME_SERVERS="$(terraform show -json | jq -r '
+      .values.root_module.child_modules[]?
+      | select(.address == "module.dns_delegation")
+      | .resources[]?
+      | select(.type == "aws_route53_delegation_set")
+      | .values.name_servers[]?')"
+
+    echo ""
+    echo "============================================================"
+    echo "Name servers for ${DOMAIN:-the domain_name in terraform.tfvars}:"
+    echo "${NAME_SERVERS:-  <none found -- is module.dns_delegation in this configuration?>}" | sed 's/^/  /'
+    echo ""
+    echo "Set them NOW, before the first full apply: where the base domain's DNS"
+    echo "is managed, as four NS records for this name (for a domain served at"
+    echo "its own apex, as the domain's name servers at the registrar). Check:"
+    echo "  nslookup -type=NS ${DOMAIN:-<domain>} 8.8.8.8"
+    echo "The apply checks this before it starts, and stops if they differ."
+    echo "They never change: a destroy keeps the delegation set."
+    echo "============================================================"
 
     if [[ "${SET_SECRETS}" == "true" ]]; then
       echo ""

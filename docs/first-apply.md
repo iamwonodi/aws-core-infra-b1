@@ -53,10 +53,19 @@ In order, it:
 
 1. creates the state bucket (`<project>-development-tfstate`) in the region from `terraform.tfvars`, with versioning, encryption and public access blocked;
 2. reads this repository's name and numeric IDs from GitHub (never committed);
-3. runs `terraform apply -target=module.github_oidc`: **the one apply nobody else reviews**, so read the plan. It creates only the GitHub OIDC provider and the core role. This is safe because that module depends on nothing else; a test enforces it;
-4. sets `TF_AWS_ROLE_ARN` on both `development` and `development-plan`.
+3. runs `terraform apply -target=module.github_oidc -target=module.dns_delegation`: **the one apply nobody else reviews**, so read the plan. It creates only the GitHub OIDC provider, the core role, and the public zone's reusable delegation set. This is safe because those modules depend on nothing else; tests enforce it;
+4. prints the delegation set's **four name servers**: set them now (next section);
+5. sets `TF_AWS_ROLE_ARN` on both `development` and `development-plan`.
 
 Repeat steps 3 and 4 for `staging` and `production`.
+
+**Set the name servers before the first full apply.** Where the base domain's DNS is managed, add the four as `NS` records for the environment's name (the host `dev` for `dev.<base>`; for production, which serves the base domain itself, set them as the domain's name servers at the registrar). Check:
+
+```bash
+nslookup -type=NS dev.example.org 8.8.8.8     # expect the four the bootstrap printed
+```
+
+Done now, the first full apply's certificates validate as soon as its zone exists. It is done **once per environment**: every public zone this environment ever has answers on these four, because a destroy keeps the delegation set. (`terraform output public_name_servers` shows them again after the first full apply.)
 
 Terraform variables set outside CI. `terraform validate` needs none. For a local `plan` or `apply`:
 
@@ -71,19 +80,9 @@ Open a pull request. `terraform-plan.yml` plans each changed environment under i
 
 The first full apply creates the network, edge, fleets and database host. It fails fast, before touching AWS, if any `CHANGE_ME` remains.
 
-**DNS delegation, during the first full apply.** The apply creates a public Route 53 zone for the environment's domain (`dev.<base>` in development) and then waits for its certificates to be validated through public DNS. That only succeeds once the zone that serves the base domain delegates this name to the new zone. The zone answers on the four name servers of the environment's reusable delegation set (`module.dns_delegation`). As soon as the zone exists (the apply is waiting on `module.edge.module.acm`), read them:
+**The DNS guard.** Every apply first checks that public DNS sends the domain to the delegation set's four name servers, and stops at once, before changing anything, if it does not, listing the four to set. Without it, an apply with a wrong delegation waits up to 75 minutes on its certificates and loses its one-hour credentials part-way. Only if your DNS provider itself is down, and nothing about the delegation has changed, run the apply manually with **`skip_dns_check`**.
 
-```bash
-ZONE=$(aws route53 list-hosted-zones-by-name --dns-name dev.example.org \
-  --query 'HostedZones[?Name==`dev.example.org.` && Config.PrivateZone==`false`].Id' --output text)
-aws route53 get-hosted-zone --id "$ZONE" --query 'DelegationSet.NameServers' --output text
-```
-
-(after the apply, `terraform output public_name_servers` gives the same four) and add them wherever the base domain's DNS is managed, as four `NS` records for the host `dev` (for production, which serves the base domain itself, change the domain's name servers at the registrar instead). The private zone has the same name; its name servers are not the ones to use. Check with `nslookup -type=NS dev.example.org 8.8.8.8`; the certificates then validate within minutes and the apply continues.
-
-Delegation is done **once per environment**: the destroy workflow keeps the delegation set, so a destroyed and rebuilt zone answers on the same name servers. Only retiring an environment for good removes it.
-
-**Do it within the hour.** The apply's AWS credentials last one hour and the certificates wait up to 75 minutes, so an apply still waiting on delegation near the hour will fail without saving its final state. If that happens, follow *Recovering from a cancelled or failed apply* in the runbook.
+The private zone has the same name as the public one; its name servers are never the ones to use.
 
 ## 6. Onboard a service
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs every offline test for the platform scripts. Needs bash, jq, python3,
-# flock and sha256sum (all present on ubuntu-latest and on the fleet AMI).
+# flock and sha256sum (all present on the CI runners' ubuntu-24.04 and on the fleet AMI).
 # AWS and Docker are replaced by the stubs in tests/bin.
 set -uo pipefail
 

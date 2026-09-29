@@ -79,7 +79,7 @@ jobs:
 
   detect-changes:
     name: Detect Target Environments
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       environments: ${{ steps.resolve.outputs.environments }}
     steps:
@@ -126,7 +126,7 @@ jobs:
     # ('' — empty string), matching dorny/paths-filter's own documented
     # recommendation for this exact check.
     if: needs.detect-changes.outputs.environments != '[]' && needs.detect-changes.outputs.environments != ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:

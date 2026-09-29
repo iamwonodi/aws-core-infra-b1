@@ -91,7 +91,7 @@ jobs:
 
   validate:
     name: Validate Confirmation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v7
@@ -110,7 +110,7 @@ jobs:
   detect-environments:
     name: Build Environment List
     needs: validate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       environments: ${{ steps.compose.outputs.environments }}
     steps:
@@ -132,7 +132,7 @@ jobs:
   destroy-plan:
     name: Destroy Plan (${{ matrix.environment }})
     needs: detect-environments
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -261,7 +261,7 @@ jobs:
   destroy-apply:
     name: Destroy Apply (${{ matrix.environment }})
     needs: [detect-environments, destroy-plan]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       max-parallel: 1

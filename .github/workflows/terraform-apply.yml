@@ -31,7 +31,8 @@ name: Terraform Apply
 #     the run ID terraform-plan.yml's own step summary prints. Needed for
 #     plans that were themselves manually triggered (e.g. an assets-only
 #     release with no .tf changes, so no PR ever existed), or to
-#     deliberately re-apply a specific historical plan.
+#     deliberately re-apply a specific historical plan. A manual run can
+#     also set "skip_dns_check" (see DNS Delegation Guard below).
 #
 # Both paths converge on the same run ID, and everything downstream
 # (discovering which environment(s) that run covers, and applying each) is
@@ -56,6 +57,11 @@ on:
         description: "GitHub Actions run ID containing the approved Terraform plan"
         required: true
         type: string
+      skip_dns_check:
+        description: "Skip the DNS delegation guard (only for a DNS provider outage, never to push past a wrong delegation)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   id-token: write
@@ -70,7 +76,7 @@ jobs:
 
   resolve-run:
     name: Resolve Plan Run
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       run_id: ${{ steps.resolve.outputs.run_id }}
     steps:
@@ -150,7 +156,7 @@ jobs:
   discover-environments:
     name: Discover Planned Environments
     needs: resolve-run
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       environments: ${{ steps.discover.outputs.environments }}
     steps:
@@ -183,7 +189,7 @@ jobs:
   apply:
     name: Apply (${{ matrix.environment }})
     needs: [resolve-run, discover-environments]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       id-token: write
       contents: write # only this job: publishes role-arns/<env>.json to the platform-outputs branch
@@ -297,6 +303,29 @@ jobs:
 
       - name: Terraform Validate
         run: terraform -chdir=infrastructure/${{ matrix.environment }} validate
+
+      # ========================================================================
+      # DNS DELEGATION GUARD
+      #
+      # The certificates validate only once public DNS sends the domain to the
+      # name servers of the environment's delegation set. When it does not, the
+      # apply would wait up to 75 minutes on them and lose its one-hour
+      # credentials part-way. This stops it at once, before anything changes,
+      # listing the four name servers to set. Skipped while the state has no
+      # delegation set yet, and when a manual run sets skip_dns_check. On a
+      # push, inputs.skip_dns_check is empty, so the guard runs.
+      # ========================================================================
+
+      - name: DNS Delegation Guard
+        if: ${{ !inputs.skip_dns_check }}
+        run: |
+          command -v dig >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq dnsutils >/dev/null; }
+          bash scripts/ci/check-dns-delegation.sh infrastructure/${{ matrix.environment }} tfplan
+
+      - name: DNS Delegation Guard Skipped
+        if: ${{ inputs.skip_dns_check }}
+        run: |
+          echo "The DNS delegation guard was skipped (skip_dns_check) for **${{ matrix.environment }}**." >> "${GITHUB_STEP_SUMMARY}"
 
       # No -var here: the saved plan already contains the assets_path
       # value used when it was created. The assets files themselves still
