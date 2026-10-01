@@ -11,7 +11,7 @@ if args[:1]==['compose']:
     def opt(n):
         return args[args.index(n)+1] if n in args else None
     pd=opt('--project-directory'); cf=opt('--file'); pn=opt('--project-name'); ef=opt('--env-file')
-    verbs=[a for a in args if a in ('config','up','stop','down','ps')]
+    verbs=[a for a in args if a in ('config','up','stop','down','ps','logs')]
     verb=verbs[0] if verbs else None
     state=os.path.join(root,'compose-state'); os.makedirs(state,exist_ok=True)
     if verb=='config':
@@ -48,6 +48,12 @@ if args[:1]==['compose']:
         os.makedirs(os.path.join(root,'up-env'),exist_ok=True)
         if ef and os.path.exists(ef): open(os.path.join(root,'up-env',pn),'w').write(open(ef).read())
         open(os.path.join(state,pn),'w').write('running'); sys.exit(0)
+    if verb=='logs':
+        # Like Compose, refuses to run without the env file the compose file names.
+        if not (ef and os.path.exists(ef)): sys.stderr.write('env file %s not found\n'%ef); sys.exit(1)
+        n=int(opt('--tail') or 1000)
+        for i in range(1,n+1): print('LOG %s line %d'%(pn,i))
+        sys.exit(0)
     if verb=='stop':
         p=os.path.join(state,pn)
         if os.path.exists(p): open(p,'w').write('stopped')

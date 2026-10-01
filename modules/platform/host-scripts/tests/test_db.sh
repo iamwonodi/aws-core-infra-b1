@@ -51,6 +51,7 @@ setup; engine postgres $IMG; engine mysql $IMG
 registry '{"postgres":{"port":15432,"active":true},"mysql":{"port":3306,"active":false}}'
 out=$(U 2>&1); rc=$?
 check "run succeeds"                                 test $rc -eq 0
+check "no log dump when every up succeeded"          bash -c "! echo '$out' | grep -q 'log lines of' && ! grep -q ' logs ' $FAKE_ROOT/calls.log"
 check "active engine deployed"                       test "$(cat $FAKE_ROOT/compose-state/db-postgres 2>/dev/null)" = running
 check "active:false engine NOT deployed (jq // regression)"  test ! -e $FAKE_ROOT/compose-state/db-mysql
 check "inactive engine gets 'stop'"                  grep -q 'docker compose --project-name db-mysql stop' $FAKE_ROOT/calls.log
@@ -115,6 +116,13 @@ check "unknown secret field fails that engine"       bash -c "[ $rc -eq 1 ] && g
 setup; engine ok $IMG; engine bad $IMG; registry '{"ok":{"port":5432},"bad":{"port":3306}}'
 out=$(FAKE_UP_FAIL=db-bad U 2>&1); rc=$?
 check "one failing engine does not stop the other"   bash -c "[ $rc -eq 1 ] && [ \"\$(cat $FAKE_ROOT/compose-state/db-ok)\" = running ] && echo '$out' | grep -q 'Failed engines: bad'"
+printf '%s' "$out" > $WORK/out.txt
+check "up is called with --quiet-pull"               grep -qE 'docker compose .* up .*--quiet-pull' $FAKE_ROOT/calls.log
+check "failure prints the last 40 log lines of the project" bash -c "grep -q 'Last 40 log lines of db-bad' $WORK/out.txt && grep -qx 'LOG db-bad line 40' $WORK/out.txt && ! grep -q 'LOG db-bad line 41' $WORK/out.txt"
+check "logs were asked for with --no-color --tail 40" grep -q 'docker compose .*--project-name db-bad .*logs --no-color --tail 40' $FAKE_ROOT/calls.log
+check "no log dump for the engine that succeeded"    bash -c "! grep -q 'LOG db-ok' $WORK/out.txt && ! grep -q 'log lines of db-ok' $WORK/out.txt"
+check "resolved env copy still removed after failure" test ! -e $WS/engines/bad/.resolved
+check "resolved .env contents are never printed"     bash -c "! grep -q 'R00t' $WORK/out.txt"
 setup; engine pg $IMG; mkdir -p $FAKE_ROOT/s3/b/database/engines/stray; printf '{}' > $FAKE_ROOT/s3/b/database/engines/stray/docker-compose.yaml; registry '{"pg":{"port":5432}}'
 out=$(U 2>&1)
 check "folder without registry entry warned, not started" bash -c "echo '$out' | grep -q 'stray has a folder but no entry' && [ ! -e $FAKE_ROOT/compose-state/db-stray ]"

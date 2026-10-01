@@ -53,6 +53,7 @@ check "scratch .resolved removed (rejected service)"      test ! -e $WORK/app/se
 check "no secret value in captured output"                bash -c "! echo '$out' | grep -q 's3cr3t'"
 check "ECR login performed"                               grep -q '^docker login --username AWS' $FAKE_ROOT/calls.log
 check "sync scoped to this tier prefix"                   grep -q 's3 sync s3://b/private/ ' $FAKE_ROOT/calls.log
+check "no log dump when no up failed (guard rejections included)"         bash -c "! echo '$out' | grep -q 'log lines of' && ! grep -q ' logs ' $FAKE_ROOT/calls.log"
 
 echo "== a changed file of equal size is downloaded"
 check "sync is called with --exact-timestamps"            grep -q 's3 sync s3://b/private/ .*--exact-timestamps' $FAKE_ROOT/calls.log
@@ -79,6 +80,15 @@ out=$(FAKE_UP_FAIL=a U 2>&1); rc=$?
 check "overall failure"                                   test $rc -eq 1
 check "the other service still deployed"                  test "$(cat $FAKE_ROOT/compose-state/b 2>/dev/null)" = running
 check "failed service is named"                           bash -c "echo '$out' | grep -q 'Failed services: a'"
+printf '%s' "$out" > $WORK/out.txt
+check "up is called with --quiet-pull"                    grep -qE 'docker compose .* up .*--quiet-pull' $FAKE_ROOT/calls.log
+check "failure prints the last 40 log lines of the project" bash -c "grep -q 'Last 40 log lines of a' $WORK/out.txt && grep -qx 'LOG a line 40' $WORK/out.txt && ! grep -q 'LOG a line 41' $WORK/out.txt"
+check "logs were asked for with --no-color --tail 40"     grep -q 'docker compose .*--project-name a .*logs --no-color --tail 40' $FAKE_ROOT/calls.log
+check "no log dump for the service that succeeded"        bash -c "! grep -q 'LOG b' $WORK/out.txt && ! grep -q 'log lines of b' $WORK/out.txt"
+check "resolved env copy still removed after the failure" test ! -e $WORK/app/services/a/.resolved
+setup; svc a "$GOOD" 'APP_SECRET_ARN=arn_app\nPW=__FROM_SECRET__:APP_SECRET_ARN:password\n'
+out=$(FAKE_UP_FAIL=a U 2>&1)
+check "resolved .env contents are never printed"          bash -c "! echo '$out' | grep -q 'dbpw'"
 
 echo "== jitter, lock and config errors"
 setup; svc a "$GOOD" 'A=1\n'

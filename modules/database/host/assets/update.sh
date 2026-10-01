@@ -281,9 +281,24 @@ for line in "${registry_lines[@]:-}"; do
       --env-file "${resolved_env}" \
       up \
       --detach \
+      --quiet-pull \
       --remove-orphans \
       --wait \
-      --wait-timeout 180 || deploy_status=$?
+      --wait-timeout 180 || {
+        deploy_status=$?
+        # The output of an SSM command is size-limited and keeps the start, so
+        # without this the failing container's own error never shows. Runs
+        # while the resolved env copy still exists (Compose needs it to read
+        # the file); only the container logs are printed, never that copy.
+        # --quiet-pull keeps pull progress out of the same limit.
+        echo "Last 40 log lines of ${project}:"
+        docker compose \
+          --project-directory "${engine_dir}" \
+          --file "${compose_file}" \
+          --project-name "${project}" \
+          --env-file "${resolved_env}" \
+          logs --no-color --tail 40 2>&1 || true
+      }
 
   else
     deploy_status=1
