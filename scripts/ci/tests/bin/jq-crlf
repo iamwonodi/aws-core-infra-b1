@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Stand-in for jq.exe, which ends every output line with CRLF. Runs the real jq
+# (the first one on PATH that is not this file's directory) and appends \r to
+# each line. Tests install it as "jq" first on PATH; see test_crlf.sh.
+self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+real_jq=""
+IFS=: read -ra dirs <<< "${PATH}"
+for dir in "${dirs[@]}"; do
+  [[ -n "${dir}" && "$(cd "${dir}" 2>/dev/null && pwd)" != "${self_dir}" && -x "${dir}/jq" && "${dir}/jq" != "${BASH_SOURCE[0]}" ]] || continue
+  # skip a copy of this stand-in installed as jq
+  grep -q 'Stand-in for jq.exe' "${dir}/jq" 2>/dev/null && continue
+  real_jq="${dir}/jq"; break
+done
+[[ -n "${real_jq}" ]] || { echo "jq-crlf: no real jq on PATH" >&2; exit 127; }
+"${real_jq}" "$@" | sed 's/$/\r/'
+exit "${PIPESTATUS[0]}"
