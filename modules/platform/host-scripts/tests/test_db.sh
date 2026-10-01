@@ -121,4 +121,14 @@ check "folder without registry entry warned, not started" bash -c "echo '$out' |
 ENABLE_ECR=false; export ENABLE_ECR; setup; engine pg $IMG; registry '{"pg":{"port":5432}}'; out=$(U 2>&1)
 check "no ECR login when ECR access is disabled"     bash -c "! grep -q '^docker login' $FAKE_ROOT/calls.log"
 
+echo "== a changed file of equal size is downloaded"
+check "sync is called with --exact-timestamps"       grep -q 's3 sync s3://b/database/engines/ .*--exact-timestamps' $FAKE_ROOT/calls.log
+setup; engine pg $IMG '' 'TAG=8.0-amd64-4968f22d0c6c\n'; registry '{"pg":{"port":5432}}'
+U >/dev/null 2>&1
+printf 'POSTGRES_PASSWORD=__FROM_SECRET__:CORE_ROOT_SECRET_ARN:root_password\nTAG=7.0-amd64-9854f7139445\n' > $FAKE_ROOT/s3/b/database/engines/pg/.env
+touch -d '2000-01-01' $FAKE_ROOT/s3/b/database/engines/pg/.env
+U >/dev/null 2>&1
+check "same-length .env change reaches the host"     grep -qx 'TAG=7.0-amd64-9854f7139445' $WS/engines/pg/.env
+check "and is what 'up' ran with"                    grep -qx 'TAG=7.0-amd64-9854f7139445' $FAKE_ROOT/up-env/db-pg
+
 echo; echo "passed=$pass failed=$fail"; [ $fail -eq 0 ]

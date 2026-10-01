@@ -134,10 +134,14 @@ mkdir -p "${ENGINES_DIR}"
 
 echo "Syncing engine definitions from s3://${DEPLOY_BUCKET_NAME}/database/"
 
+# --exact-timestamps: by default a download is skipped when the sizes match and
+# the local copy is not older, so an .env that changes only an image tag of the
+# same length would never arrive while the deploy reported success.
 aws s3 sync \
   "s3://${DEPLOY_BUCKET_NAME}/database/engines/" \
   "${ENGINES_DIR}/" \
   --delete \
+  --exact-timestamps \
   --exclude "*/.resolved/*" \
   --only-show-errors
 

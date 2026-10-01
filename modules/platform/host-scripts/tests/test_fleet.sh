@@ -54,6 +54,16 @@ check "no secret value in captured output"                bash -c "! echo '$out'
 check "ECR login performed"                               grep -q '^docker login --username AWS' $FAKE_ROOT/calls.log
 check "sync scoped to this tier prefix"                   grep -q 's3 sync s3://b/private/ ' $FAKE_ROOT/calls.log
 
+echo "== a changed file of equal size is downloaded"
+check "sync is called with --exact-timestamps"            grep -q 's3 sync s3://b/private/ .*--exact-timestamps' $FAKE_ROOT/calls.log
+setup; svc web "$GOOD" 'TAG=8.0-amd64-4968f22d0c6c\n'
+U >/dev/null 2>&1
+printf 'TAG=7.0-amd64-9854f7139445\n' > $FAKE_ROOT/s3/b/private/web/.env
+touch -d '2000-01-01' $FAKE_ROOT/s3/b/private/web/.env
+U >/dev/null 2>&1
+check "same-length .env change reaches the host"          grep -qx 'TAG=7.0-amd64-9854f7139445' $WORK/app/services/web/.env
+check "and is what 'up' ran with"                         grep -qx 'TAG=7.0-amd64-9854f7139445' $FAKE_ROOT/up-env/web
+
 echo "== removal stops the service"
 rm -rf "$FAKE_ROOT/s3/b/private/evil" "$FAKE_ROOT/s3/b/private/esc" "$FAKE_ROOT/s3/b/private/incomplete"; rm -rf "$FAKE_ROOT/s3/b/private/web"
 : > $FAKE_ROOT/calls.log

@@ -20,10 +20,19 @@ if args[:2]==['s3','sync']:
         for entry in os.listdir(dst):
             if entry not in os.listdir(src) and not excluded(entry):
                 p=os.path.join(dst,entry); shutil.rmtree(p) if os.path.isdir(p) else os.remove(p)
+    exact='--exact-timestamps' in args
+    # The real CLI's rule: without --exact-timestamps a file is skipped when the
+    # sizes match and the local copy is not older than the S3 one.
+    def skipped(s,t):
+        if not os.path.exists(t): return False
+        a,b=os.stat(s),os.stat(t)
+        if a.st_size!=b.st_size: return False
+        return a.st_mtime==b.st_mtime if exact else b.st_mtime>=a.st_mtime
     for r,d,f in os.walk(src):
         rel=os.path.relpath(r,src)
         for x in f:
-            t=os.path.join(dst,rel,x); os.makedirs(os.path.dirname(t),exist_ok=True); shutil.copy2(os.path.join(r,x),t)
+            t=os.path.join(dst,rel,x); os.makedirs(os.path.dirname(t),exist_ok=True)
+            if not skipped(os.path.join(r,x),t): shutil.copy2(os.path.join(r,x),t)
     sys.exit(0)
 if args[:2]==['s3','cp']:
     src,dst=args[2],args[3]

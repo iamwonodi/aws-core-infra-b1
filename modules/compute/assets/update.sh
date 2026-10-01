@@ -121,10 +121,14 @@ shopt -u nullglob
 
 echo "Syncing services from s3://${DEPLOY_BUCKET_NAME}/${FLEET_TIER}/"
 
+# --exact-timestamps: by default a download is skipped when the sizes match and
+# the local copy is not older, so an .env that changes only an image tag of the
+# same length would never arrive while the deploy reported success.
 aws s3 sync \
   "s3://${DEPLOY_BUCKET_NAME}/${FLEET_TIER}/" \
   "${SERVICES_DIR}/" \
   --delete \
+  --exact-timestamps \
   --exclude "*/.resolved/*" \
   --only-show-errors
 
