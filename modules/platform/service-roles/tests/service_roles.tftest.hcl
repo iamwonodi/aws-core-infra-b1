@@ -704,6 +704,75 @@ run "a_service_declares_its_own_agents_to_the_front_door_and_nothing_else" {
   }
 }
 
+# A PutObject that carries tags also needs s3:PutObjectTagging (the provider
+# reads tags on refresh, writes them on create and update, and removes them on
+# update), so a service's two deploy-bucket objects need the tagging actions: on
+# their own keys and nowhere else.
+run "a_service_may_tag_only_its_own_provisioning_and_front_door_objects" {
+  command = plan
+
+  variables {
+    front_door_enabled = true
+    entries = {
+      "acme/auth-infra" = { service_name = "auth", kind = "infra", tier = "private", owner_id = "1", repository_id = "2" }
+      "acme/auth-app"   = { service_name = "auth", kind = "app", tier = "private", owner_id = "1", repository_id = "3" }
+      "acme/web-infra"  = { service_name = "web", kind = "infra", tier = "private", owner_id = "1", repository_id = "4" }
+    }
+  }
+
+  assert {
+    condition = alltrue([
+      for sid, resource in {
+        PublishOwnProvisioningRequest  = "arn:aws:s3:::core-development-deploy/provisioning/auth/*"
+        DeclareOwnAgentsToTheFrontDoor = "arn:aws:s3:::core-development-deploy/front-door/auth.json"
+        } : anytrue([
+          for statement in jsondecode(output.policies["acme/auth-infra"]).Statement :
+          statement.Sid == sid
+          && statement.Resource == resource
+          && toset(statement.Action) == toset(["s3:DeleteObject", "s3:GetObject", "s3:PutObject", "s3:DeleteObjectTagging", "s3:GetObjectTagging", "s3:PutObjectTagging"])
+      ])
+    ])
+    error_message = "each of the two statements must allow exactly object get/put/delete and their tagging actions, on the service's own key"
+  }
+
+  assert {
+    condition = alltrue([
+      for statement in jsondecode(output.policies["acme/auth-infra"]).Statement :
+      contains(["PublishOwnProvisioningRequest", "DeclareOwnAgentsToTheFrontDoor"], statement.Sid)
+      if anytrue([for action in flatten([statement.Action]) : can(regex("ObjectTagging|^s3:\\*$", action))])
+    ])
+    error_message = "no other statement may allow a tagging action or s3:* (the state bucket, the assets bucket and the rest hold no tagging permission)"
+  }
+
+  assert {
+    condition = alltrue(flatten([
+      for statement in jsondecode(output.policies["acme/auth-infra"]).Statement : [
+        for resource in flatten([statement.Resource]) : (
+          startswith(resource, "arn:aws:s3:::core-development-deploy/provisioning/auth/") || resource == "arn:aws:s3:::core-development-deploy/front-door/auth.json"
+        )
+      ] if anytrue([for action in flatten([statement.Action]) : can(regex("ObjectTagging", action))])
+    ]))
+    error_message = "a tagging action must reach only the deploy bucket's provisioning/<service>/ and front-door/<service>.json, never another bucket or another service's key"
+  }
+
+  assert {
+    condition     = !strcontains(output.policies["acme/auth-infra"], "ObjectTagging\"],\"Resource\":\"arn:aws:s3:::core-development-deploy/*")
+    error_message = "the deploy bucket's tagging permission is never bucket-wide"
+  }
+
+  assert {
+    condition     = !strcontains(output.policies["acme/auth-app"], "Tagging")
+    error_message = "the app role holds no tagging action"
+  }
+
+  assert {
+    condition = alltrue([
+      for needle in ["provisioning/web/*", "front-door/web.json"] : strcontains(output.policies["acme/web-infra"], needle)
+    ]) && !strcontains(output.policies["acme/web-infra"], "provisioning/auth") && !strcontains(output.policies["acme/web-infra"], "front-door/auth")
+    error_message = "another service gets its own keys, and none of auth's"
+  }
+}
+
 run "without_a_front_door_nothing_is_declared" {
   command = plan
 

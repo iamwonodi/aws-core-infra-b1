@@ -368,12 +368,15 @@ locals {
 
   # Provisioning the service's own database: publish the request, then send the one
   # document that carries it out, and only to the database host.
+  # The objects carry tags (the blueprint's own and the provider's default_tags), and
+  # a PutObject with tags also needs s3:PutObjectTagging; the provider reads tags on
+  # refresh and removes them on update. Same keys, so no wider.
   st_infra_provisioning = {
     for repository, c in local.ctx : repository => local.provisioning_enabled ? [
       jsonencode({
         Sid      = "PublishOwnProvisioningRequest"
         Effect   = "Allow"
-        Action   = ["s3:DeleteObject", "s3:GetObject", "s3:PutObject"]
+        Action   = ["s3:DeleteObject", "s3:DeleteObjectTagging", "s3:GetObject", "s3:GetObjectTagging", "s3:PutObject", "s3:PutObjectTagging"]
         Resource = "arn:aws:s3:::${local.deploy_bucket}/provisioning/${c.service}/*"
       }),
       jsonencode({
@@ -412,7 +415,7 @@ locals {
       jsonencode({
         Sid      = "DeclareOwnAgentsToTheFrontDoor"
         Effect   = "Allow"
-        Action   = ["s3:DeleteObject", "s3:GetObject", "s3:PutObject"]
+        Action   = ["s3:DeleteObject", "s3:DeleteObjectTagging", "s3:GetObject", "s3:GetObjectTagging", "s3:PutObject", "s3:PutObjectTagging"]
         Resource = "arn:aws:s3:::${local.deploy_bucket}/front-door/${c.service}.json"
       }),
     ] : []
