@@ -109,6 +109,11 @@ jobs:
       - name: File Layout
         run: bash scripts/ci/check-file-layout.sh .
 
+      # A download by aws s3 sync skips a changed file of equal size unless it
+      # has --exact-timestamps.
+      - name: S3 Sync Downloads
+        run: bash scripts/ci/check-s3-sync-downloads.sh .
+
       - name: Rebuild Wiring
         run: |
           python3 scripts/ci/check-environment-wiring.py \

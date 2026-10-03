@@ -47,6 +47,7 @@ python3 scripts/ci/check-bootstrap-closure.py infrastructure/*
 python3 scripts/ci/check-host-dependencies.py modules infrastructure
 python3 scripts/ci/check-environment-wiring.py infrastructure/*
 bash scripts/ci/check-file-layout.sh .
+bash scripts/ci/check-s3-sync-downloads.sh .
 terraform -chdir=modules/database/host init -backend=false && bash scripts/ci/check-data-volume-plan.sh
 ```
 

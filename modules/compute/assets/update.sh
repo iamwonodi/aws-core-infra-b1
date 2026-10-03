@@ -121,10 +121,14 @@ shopt -u nullglob
 
 echo "Syncing services from s3://${DEPLOY_BUCKET_NAME}/${FLEET_TIER}/"
 
+# --exact-timestamps: by default a download is skipped when the sizes match and
+# the local copy is not older, so an .env that changes only an image tag of the
+# same length would never arrive while the deploy reported success.
 aws s3 sync \
   "s3://${DEPLOY_BUCKET_NAME}/${FLEET_TIER}/" \
   "${SERVICES_DIR}/" \
   --delete \
+  --exact-timestamps \
   --exclude "*/.resolved/*" \
   --only-show-errors
 
@@ -212,9 +216,24 @@ for service_path in "${SERVICES_DIR}"/*/; do
       --env-file "${resolved_env_file}" \
       up \
       --detach \
+      --quiet-pull \
       --remove-orphans \
       --wait \
-      --wait-timeout 120 || deploy_status=$?
+      --wait-timeout 120 || {
+        deploy_status=$?
+        # The output of an SSM command is size-limited and keeps the start, so
+        # without this the failing container's own error never shows. Runs
+        # while the resolved env copy still exists (Compose needs it to read
+        # the file); only the container logs are printed, never that copy.
+        # --quiet-pull keeps pull progress out of the same limit.
+        echo "Last 40 log lines of ${service_name}:"
+        docker compose \
+          --project-directory "${service_path}" \
+          --file "${compose_file}" \
+          --project-name "${service_name}" \
+          --env-file "${resolved_env_file}" \
+          logs --no-color --tail 40 2>&1 || true
+      }
 
   else
     deploy_status=1
